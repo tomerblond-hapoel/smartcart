@@ -30,8 +30,10 @@ $title = ($page_title ?? 'SmartCart') . ' — ' . APP_NAME;
     <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-    <?php if (defined('GMAPS_API_KEY') && GMAPS_API_KEY !== 'YOUR_GOOGLE_MAPS_API_KEY'): ?>
-    <script src="https://maps.googleapis.com/maps/api/js?key=<?= GMAPS_API_KEY ?>&callback=initMap&libraries=places" defer></script>
+    <?php if (!empty($needs_map)): ?>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="<?= APP_URL ?>/assets/js/maps.js"></script>
     <?php endif; ?>
 </head>
 <body class="<?= $lang_class ?? '' ?>">

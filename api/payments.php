@@ -13,12 +13,15 @@ header('Content-Type: application/json; charset=utf-8');
 
 $action = $_GET['action'] ?? '';
 
-match(true) {
-    $action === 'create_order'  => create_paypal_order(),
-    $action === 'capture_order' => capture_paypal_order(),
-    $action === 'status'        => check_payment_status(),
-    default => json_response(['error' => 'Unknown action'], 400),
-};
+if ($action === 'create_order') {
+    create_paypal_order();
+} elseif ($action === 'capture_order') {
+    capture_paypal_order();
+} elseif ($action === 'status') {
+    check_payment_status();
+} else {
+    json_response(['error' => 'Unknown action'], 400);
+}
 
 // ─────────────────────────────────────────────────────────
 // Get PayPal OAuth token (cached in session for 1 hour)

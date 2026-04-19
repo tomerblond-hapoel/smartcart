@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/functions.php';
 
 $page_title = $t['nav_home'];
 $user_id    = current_user_id();
+$needs_map  = true;
 
 $pdo = getPDO();
 
@@ -242,46 +243,30 @@ include __DIR__ . '/../includes/header.php';
 })();
 <?php endif; ?>
 
-// ── Google Maps ─────────────────────────────────────────
+// ── Leaflet Map ──────────────────────────────────────────
 const mapGroups = <?= json_encode($map_groups, JSON_UNESCAPED_UNICODE) ?>;
 const appUrl    = '<?= APP_URL ?>';
 
-function initMap() {
-    const mapEl = document.getElementById('map-main');
-    if (!mapEl || !mapGroups.length) return;
-
-    const center = mapGroups[0];
-    const map = new google.maps.Map(mapEl, {
-        center: { lat: parseFloat(center.lat), lng: parseFloat(center.lng) },
-        zoom: 8,
-        styles: [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
-    });
-
-    mapGroups.forEach(g => {
+(function() {
+    if (!mapGroups.length || typeof SmartCartMaps === 'undefined') return;
+    var center = SmartCartMaps.ISRAEL_CENTER;
+    // Use first group's coords as center if available
+    if (mapGroups[0].lat && mapGroups[0].lng) {
+        center = { lat: parseFloat(mapGroups[0].lat), lng: parseFloat(mapGroups[0].lng) };
+    }
+    var map     = SmartCartMaps.createMap('map-main', center.lat, center.lng, 8);
+    if (!map) return;
+    var markers = [];
+    mapGroups.forEach(function(g) {
         if (!g.lat || !g.lng) return;
-        const marker = new google.maps.Marker({
-            position: { lat: parseFloat(g.lat), lng: parseFloat(g.lng) },
-            map,
-            title: g.product_name,
-            icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 10,
-                fillColor: '#0D9488',
-                fillOpacity: 1,
-                strokeColor: '#white',
-                strokeWeight: 2,
-            },
-        });
-        const info = new google.maps.InfoWindow({
-            content: `<div style="font-family:Inter,sans-serif;padding:4px;">
-                <strong>${g.product_name}</strong><br>
-                <span style="color:#0D9488;font-weight:600;">₪${parseFloat(g.group_price_ils).toLocaleString()}</span><br>
-                <span style="font-size:12px;color:#6B7280">${g.current_participants}/${g.target_participants} members</span><br>
-                <a href="${appUrl}/pages/group.php?id=${g.id}" style="color:#0D9488;font-size:12px;">Join Group →</a>
-            </div>`,
-        });
-        marker.addListener('click', () => info.open(map, marker));
+        var popup = '<div style="font-family:Inter,sans-serif;padding:4px">'
+            + '<strong>' + g.product_name + '</strong><br>'
+            + '<span style="color:#0D9488;font-weight:600">\u20AA' + parseFloat(g.group_price_ils).toLocaleString() + '</span><br>'
+            + '<span style="font-size:12px;color:#6B7280">' + g.current_participants + '/' + g.target_participants + ' members</span><br>'
+            + '<a href="' + appUrl + '/pages/group.php?id=' + g.id + '" style="color:#0D9488;font-size:12px">Join Group \u2192</a>'
+            + '</div>';
+        markers.push(SmartCartMaps.addMarker(map, parseFloat(g.lat), parseFloat(g.lng), popup));
     });
-}
-window.initMap = initMap;
+    SmartCartMaps.fitBounds(map, markers);
+})();
 </script>

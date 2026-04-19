@@ -19,16 +19,23 @@ header('Content-Type: application/json; charset=utf-8');
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
-match(true) {
-    $action === 'list'                                  => list_groups(),
-    $action === 'get'  && isset($_GET['id'])            => get_group((int)$_GET['id']),
-    $action === 'create' && $method === 'POST'          => create_group(),
-    $action === 'join'   && isset($_GET['group_id'])    => join_group((int)$_GET['group_id']),
-    $action === 'leave'  && isset($_GET['group_id'])    => leave_group((int)$_GET['group_id']),
-    $action === 'message' && isset($_GET['group_id'])   => post_message((int)$_GET['group_id']),
-    $action === 'expire_failed'                         => expire_failed_groups(),
-    default => json_response(['error' => 'Unknown action'], 400),
-};
+if ($action === 'list') {
+    list_groups();
+} elseif ($action === 'get' && isset($_GET['id'])) {
+    get_group((int)$_GET['id']);
+} elseif ($action === 'create' && $method === 'POST') {
+    create_group();
+} elseif ($action === 'join' && isset($_GET['group_id'])) {
+    join_group((int)$_GET['group_id']);
+} elseif ($action === 'leave' && isset($_GET['group_id'])) {
+    leave_group((int)$_GET['group_id']);
+} elseif ($action === 'message' && isset($_GET['group_id'])) {
+    post_message((int)$_GET['group_id']);
+} elseif ($action === 'expire_failed') {
+    expire_failed_groups();
+} else {
+    json_response(['error' => 'Unknown action'], 400);
+}
 
 // ─────────────────────────────────────────────────────────
 function list_groups(): void {

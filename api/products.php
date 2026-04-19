@@ -16,14 +16,19 @@ header('Content-Type: application/json; charset=utf-8');
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
-match(true) {
-    $action === 'list'                         => list_products(),
-    $action === 'get' && isset($_GET['id'])    => get_product((int)$_GET['id']),
-    $action === 'create' && $method === 'POST' => create_product(),
-    $action === 'update' && isset($_GET['id']) => update_product((int)$_GET['id']),
-    $action === 'delete' && isset($_GET['id']) => delete_product((int)$_GET['id']),
-    default => json_response(['error' => 'Unknown action'], 400),
-};
+if ($action === 'list') {
+    list_products();
+} elseif ($action === 'get' && isset($_GET['id'])) {
+    get_product((int)$_GET['id']);
+} elseif ($action === 'create' && $method === 'POST') {
+    create_product();
+} elseif ($action === 'update' && isset($_GET['id'])) {
+    update_product((int)$_GET['id']);
+} elseif ($action === 'delete' && isset($_GET['id'])) {
+    delete_product((int)$_GET['id']);
+} else {
+    json_response(['error' => 'Unknown action'], 400);
+}
 
 // ─────────────────────────────────────────────────────────
 function list_products(): void {
@@ -47,11 +52,13 @@ function list_products(): void {
         $params[] = "%$city%";
     }
 
-    $order = match($sort) {
-        'discount'    => 'disc DESC',
-        'ending_soon' => 'earliest_deadline ASC',
-        default       => 'p.created_at DESC',
-    };
+    if ($sort === 'discount') {
+        $order = 'disc DESC';
+    } elseif ($sort === 'ending_soon') {
+        $order = 'earliest_deadline ASC';
+    } else {
+        $order = 'p.created_at DESC';
+    }
 
     $sql = "
         SELECT p.*,

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 $page_title = $t['browse_title'];
+$needs_map  = true;
 $pdo = getPDO();
 
 $category = trim($_GET['category'] ?? '');
@@ -31,16 +32,18 @@ if ($city) {
     $params[] = "%$city%";
 }
 
-$order = match($sort) {
-    'discount'    => 'disc DESC',
-    'ending_soon' => '(SELECT MIN(gp2.deadline) FROM group_purchases gp2 WHERE gp2.product_id = p.id AND gp2.status = \'open\') ASC',
-    default       => 'p.created_at DESC',
-};
+if ($sort === 'discount') {
+    $order = 'disc DESC';
+} elseif ($sort === 'ending_soon') {
+    $order = '(SELECT MIN(gp2.deadline) FROM group_purchases gp2 WHERE gp2.product_id = p.id AND gp2.status = \'open\') ASC';
+} else {
+    $order = 'p.created_at DESC';
+}
 
 $where_sql = implode(' AND ', $where);
 $sql = "
     SELECT p.*,
-           b.business_name,
+           b.business_name, b.city AS biz_city,
            ROUND((p.price_ils - p.group_price_ils) / p.price_ils * 100) AS disc,
            (SELECT COUNT(*) FROM group_purchases gp WHERE gp.product_id = p.id AND gp.status = 'open') AS active_groups
     FROM products p
@@ -83,8 +86,10 @@ include __DIR__ . '/../includes/header.php';
         </div>
         <div style="flex:1;min-width:140px;">
             <label class="form-label"><?= $t['filter_city'] ?></label>
-            <input type="text" name="city" class="form-control" value="<?= htmlspecialchars($city) ?>"
-                   placeholder="Tel Aviv, Haifa...">
+            <input type="text" id="browse-city" name="city" class="form-control"
+                   value="<?= htmlspecialchars($city) ?>"
+                   placeholder="Tel Aviv, Haifa..."
+                   autocomplete="off">
         </div>
         <div style="flex:1;min-width:140px;">
             <label class="form-label"><?= $t['filter_sort'] ?></label>
@@ -151,6 +156,13 @@ include __DIR__ . '/../includes/header.php';
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                         Min <?= $p['min_participants'] ?>
                     </span>
+                    <?php $display_city = $p['city'] ?? $p['biz_city'] ?? ''; ?>
+                    <?php if ($display_city): ?>
+                    <span style="display:flex;align-items:center;gap:3px;">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <?= htmlspecialchars($display_city) ?>
+                    </span>
+                    <?php endif; ?>
                     <?php if ($p['active_groups'] > 0): ?>
                     <span style="color:var(--green);font-weight:600;">✓ <?= $p['active_groups'] ?> active</span>
                     <?php else: ?>
@@ -177,3 +189,10 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
+
+<script>
+// City autocomplete for browse filter (text-only, no lat/lng needed)
+if (typeof SmartCartMaps !== 'undefined') {
+    SmartCartMaps.initCityAutocomplete('browse-city', null, null);
+}
+</script>

@@ -111,16 +111,15 @@ function require_auth(): int {
  * Returns ['lat' => float, 'lng' => float] or null on failure.
  */
 function geocode_city(string $city): ?array {
-    if (!defined('GMAPS_API_KEY') || GMAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY') {
-        return null;
-    }
     $query = urlencode($city . ', Israel');
-    $url   = "https://maps.googleapis.com/maps/api/geocode/json?address={$query}&key=" . GMAPS_API_KEY;
-    $resp  = @file_get_contents($url);
+    $url   = "https://nominatim.openstreetmap.org/search?q={$query}&format=json&limit=1";
+    $ctx   = stream_context_create(['http' => [
+        'header'  => "User-Agent: SmartCart/1.0 (academic project)\r\n",
+        'timeout' => 5,
+    ]]);
+    $resp = @file_get_contents($url, false, $ctx);
     if (!$resp) return null;
-    $data  = json_decode($resp, true);
-    if (($data['status'] ?? '') !== 'OK') return null;
-    $loc = $data['results'][0]['geometry']['location'] ?? null;
-    if (!$loc) return null;
-    return ['lat' => (float)$loc['lat'], 'lng' => (float)$loc['lng']];
+    $data = json_decode($resp, true);
+    if (empty($data[0])) return null;
+    return ['lat' => (float)$data[0]['lat'], 'lng' => (float)$data[0]['lon']];
 }

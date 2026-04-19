@@ -15,7 +15,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 // Parse JSON body if sent as application/json
 $body = [];
 $raw = file_get_contents('php://input');
-if ($raw && str_contains($_SERVER['CONTENT_TYPE'] ?? '', 'application/json')) {
+if ($raw && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false) {
     $body = json_decode($raw, true) ?? [];
 }
 $input = array_merge($_POST, $body);

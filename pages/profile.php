@@ -10,6 +10,7 @@ $user_id = current_user_id();
 $user    = get_current_user_data();
 
 $page_title = $t['profile_title'];
+$needs_map  = true;
 $categories = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
 $cat_icons  = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
 
@@ -63,7 +64,10 @@ include __DIR__ . '/../includes/header.php';
                         </div>
                         <div class="form-group">
                             <label class="form-label"><?= $t['label_city'] ?></label>
-                            <input type="text" id="city-input" name="city" class="form-control" value="<?= htmlspecialchars($user['city'] ?? '') ?>" placeholder="Tel Aviv, Haifa...">
+                            <input type="text" id="city-input" name="city" class="form-control"
+                               value="<?= htmlspecialchars($user['city'] ?? '') ?>"
+                               placeholder="Tel Aviv, Haifa..."
+                               autocomplete="off">
                             <div class="form-hint">Used by Smart Agent for proximity recommendations</div>
                         </div>
                         <input type="hidden" id="lat-input" name="lat" value="<?= $user['lat'] ?? '' ?>">
@@ -203,18 +207,8 @@ document.getElementById('cats-form').addEventListener('submit', async function(e
     btn.disabled = false;
 });
 
-// Geocode city when it changes
-document.getElementById('city-input')?.addEventListener('blur', function() {
-    const city = this.value.trim();
-    if (!city || typeof google === 'undefined') return;
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ address: city + ', Israel' }, (results, status) => {
-        if (status === 'OK') {
-            document.getElementById('lat-input').value = results[0].geometry.location.lat();
-            document.getElementById('lng-input').value = results[0].geometry.location.lng();
-        }
-    });
-});
-function initMap() {} // required by Maps SDK
-window.initMap = initMap;
+// City autocomplete (Photon / OpenStreetMap)
+if (typeof SmartCartMaps !== 'undefined') {
+    SmartCartMaps.initCityAutocomplete('city-input', 'lat-input', 'lng-input');
+}
 </script>

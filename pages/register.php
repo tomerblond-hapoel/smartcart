@@ -9,6 +9,7 @@ if (is_logged_in()) {
 }
 
 $page_title = $t['register_title'];
+$needs_map  = true;
 include __DIR__ . '/../includes/header.php';
 ?>
 
@@ -63,7 +64,11 @@ include __DIR__ . '/../includes/header.php';
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="city"><?= $t['register_city'] ?></label>
-                    <input type="text" id="city" name="city" class="form-control" placeholder="Tel Aviv, Haifa, etc.">
+                    <input type="text" id="reg-city" name="city" class="form-control"
+                           placeholder="Tel Aviv, Haifa, etc."
+                           autocomplete="off">
+                    <input type="hidden" id="reg-lat" name="lat" value="">
+                    <input type="hidden" id="reg-lng" name="lng" value="">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="phone"><?= $t['register_phone'] ?></label>
@@ -175,4 +180,8 @@ form.addEventListener('submit', async function(e) {
         btn.textContent = '<?= $t['register_btn'] ?>';
     }
 });
+// City autocomplete (Photon / OpenStreetMap)
+if (typeof SmartCartMaps !== 'undefined') {
+    SmartCartMaps.initCityAutocomplete('reg-city', 'reg-lat', 'reg-lng');
+}
 </script>

@@ -33,6 +33,9 @@ $groups = $gstmt->fetchAll();
 $cat_icons = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
 $user_id   = current_user_id();
 $page_title = $product['name'];
+$needs_map  = true;
+$biz_lat    = (float)($product['biz_lat'] ?? 0);
+$biz_lng    = (float)($product['biz_lng'] ?? 0);
 
 // Handle start group form
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['target_participants']) && $user_id) {
@@ -76,6 +79,22 @@ include __DIR__ . '/../includes/header.php';
                     <h3 style="font-weight:600;margin-bottom:8px;">About this product</h3>
                     <p style="line-height:1.7;color:var(--gray-700);"><?= htmlspecialchars($product['description']) ?></p>
                 </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Business Location Map -->
+            <?php if ($biz_lat && $biz_lng): ?>
+            <div class="card" style="margin-top:20px;">
+                <div class="card-header">
+                    <strong>📍 <?= htmlspecialchars($product['business_name']) ?></strong>
+                    <div style="font-size:12px;color:var(--gray-500);margin-top:2px;">
+                        <?= htmlspecialchars($product['biz_city'] ?? '') ?>
+                        <?php if ($product['biz_phone']): ?>
+                        · <?= htmlspecialchars($product['biz_phone']) ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div id="map-product" style="height:220px;border-radius:0 0 var(--radius) var(--radius);overflow:hidden;"></div>
             </div>
             <?php endif; ?>
         </div>
@@ -176,3 +195,17 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
+
+<script>
+(function() {
+    var lat = <?= $biz_lat ?>;
+    var lng = <?= $biz_lng ?>;
+    if (!lat || !lng || typeof SmartCartMaps === 'undefined') return;
+    var map = SmartCartMaps.createMap('map-product', lat, lng, 15);
+    if (!map) return;
+    SmartCartMaps.addMarker(
+        map, lat, lng,
+        '<strong><?= htmlspecialchars($product['business_name']) ?></strong><br><?= htmlspecialchars($product['biz_city'] ?? '') ?>'
+    );
+})();
+</script>

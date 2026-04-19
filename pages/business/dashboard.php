@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/functions.php';
 require_role('business');
 $user_id    = current_user_id();
 $page_title = $t['biz_dashboard'];
+$needs_map  = true;
 
 $pdo = getPDO();
 
@@ -252,7 +253,11 @@ include __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="form-group">
                     <label class="form-label"><?= $t['product_city'] ?></label>
-                    <input type="text" name="city" id="pf-city" class="form-control" value="<?= htmlspecialchars($business['city'] ?? '') ?>">
+                    <input type="text" name="city" id="pf-city" class="form-control"
+                           value="<?= htmlspecialchars($business['city'] ?? '') ?>"
+                           autocomplete="off">
+                    <input type="hidden" id="pf-lat" name="lat" value="">
+                    <input type="hidden" id="pf-lng" name="lng" value="">
                 </div>
                 <div class="form-group">
                     <label class="form-label"><?= $t['product_img'] ?></label>
@@ -308,7 +313,6 @@ document.getElementById('product-form').addEventListener('submit', async functio
 
 async function updateShipping(orderId, status) {
     try {
-        // Simple inline PATCH via orders API
         await SmartCart.api(`<?= APP_URL ?>/api/orders.php?action=update_shipping&id=${orderId}`, {
             method: 'POST', body: JSON.stringify({ shipping_status: status }),
         });
@@ -316,5 +320,10 @@ async function updateShipping(orderId, status) {
     } catch(err) {
         SmartCart.showToast(err.message, 'error');
     }
+}
+
+// City autocomplete (Photon / OpenStreetMap)
+if (typeof SmartCartMaps !== 'undefined') {
+    SmartCartMaps.initCityAutocomplete('pf-city', 'pf-lat', 'pf-lng');
 }
 </script>

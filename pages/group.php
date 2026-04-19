@@ -87,6 +87,7 @@ $days_left  = days_until($group['deadline']);
 $cat_icons  = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
 
 $page_title = $group['product_name'];
+$needs_map  = true;
 include __DIR__ . '/../includes/header.php';
 ?>
 
@@ -303,17 +304,13 @@ const GROUP_PRICE  = <?= (float)$group['group_price_ils'] ?>;
 const IS_MEMBER    = <?= $is_member ? 'true' : 'false' ?>;
 const MY_STATUS    = '<?= $my_status ?? '' ?>';
 
-// Google Maps for business location
-function initMap() {
-    const mapEl = document.getElementById('map-group');
-    if (!mapEl || !BIZ_LAT || !BIZ_LNG) return;
-    const map = new google.maps.Map(mapEl, {
-        center: { lat: BIZ_LAT, lng: BIZ_LNG },
-        zoom: 14,
-    });
-    new google.maps.Marker({ position: { lat: BIZ_LAT, lng: BIZ_LNG }, map });
-}
-window.initMap = initMap;
+// Leaflet map for business location
+(function() {
+    if (!BIZ_LAT || !BIZ_LNG || typeof SmartCartMaps === 'undefined') return;
+    var map = SmartCartMaps.createMap('map-group', BIZ_LAT, BIZ_LNG, 14);
+    if (!map) return;
+    SmartCartMaps.addMarker(map, BIZ_LAT, BIZ_LNG, '<strong><?= htmlspecialchars($group['business_name']) ?></strong><br><?= htmlspecialchars($group['biz_address'] ?? $group['biz_city']) ?>');
+})();
 
 <?php if ($my_status === 'joined' && $group['status'] === 'closed' && defined('PAYPAL_CLIENT_ID') && PAYPAL_CLIENT_ID !== 'YOUR_PAYPAL_SANDBOX_CLIENT_ID'): ?>
 // PayPal SDK
