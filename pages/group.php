@@ -196,9 +196,9 @@ include __DIR__ . '/../includes/header.php';
                         <div class="progress-bar <?= $fill_class ?>" style="width:<?= $fill_pct ?>%;"></div>
                     </div>
                     <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px;">
-                        <span><strong><?= $group['current_participants'] ?></strong> / <?= $group['target_participants'] ?> <?= $t['group_members_count'] ?></span>
+                        <span id="live-count"><strong><?= $group['current_participants'] ?></strong> / <?= $group['target_participants'] ?> <?= $t['group_members_count'] ?></span>
                         <span style="color:<?= $days_left <= 3 ? 'var(--danger)' : 'var(--gray-500)' ?>;">
-                            ⏰ <?= countdown_label($group['deadline']) ?>
+                            ⏰ <span id="group-countdown" data-deadline="<?= strtotime($group['deadline']) ?>" style="font-variant-numeric:tabular-nums;font-weight:700;"><?= countdown_label($group['deadline']) ?></span>
                         </span>
                     </div>
 
@@ -221,12 +221,30 @@ include __DIR__ . '/../includes/header.php';
                             Login to Join
                         </a>
                         <?php elseif (!$is_member): ?>
-                        <button class="btn btn-primary btn-full btn-lg" data-action="join-group" data-group-id="<?= $group_id ?>">
+                        <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;text-align:center;">
+                            <?php $paypal_live = defined('PAYPAL_CLIENT_ID') && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false && PAYPAL_CLIENT_ID !== ''; ?>
+                            <?php if ($paypal_live): ?>
+                                Click below to commit. We hold your payment via PayPal — you're only charged once the group succeeds.
+                            <?php else: ?>
+                                Click below to join. Your spot is reserved instantly — payment is captured only when the group reaches its target.
+                            <?php endif; ?>
+                        </p>
+                        <div id="paypal-button-container"></div>
+                        <button id="dev-join-btn" class="btn btn-primary btn-full btn-lg" data-action="join-group" data-group-id="<?= $group_id ?>" style="display:none;">
                             <?= $t['group_join'] ?>
                         </button>
                         <?php else: ?>
-                        <div style="background:var(--purple-50);border-radius:8px;padding:12px;text-align:center;margin-bottom:12px;">
-                            <span style="color:var(--purple);font-weight:600;">✓ You're in this group!</span>
+                        <div style="background:var(--primary-50);border-radius:8px;padding:12px;text-align:center;margin-bottom:12px;">
+                            <span style="color:var(--primary);font-weight:600;">
+                                <?php if ($my_status === 'paid'): ?>
+                                    ✓ Payment captured — order created
+                                <?php else: ?>
+                                    ✓ You're in! Payment authorized — charged when group succeeds.
+                                <?php endif; ?>
+                            </span>
+                            <?php if ($my_status === 'paid'): ?>
+                            <br><a href="<?= APP_URL ?>/pages/my-orders.php" style="font-size:12px;">View your order →</a>
+                            <?php endif; ?>
                         </div>
                         <?php if ($my_status !== 'paid'): ?>
                         <button class="btn btn-ghost btn-full btn-sm" data-action="leave-group" data-group-id="<?= $group_id ?>">
@@ -236,13 +254,15 @@ include __DIR__ . '/../includes/header.php';
                         <?php endif; ?>
 
                     <?php elseif ($group['status'] === 'closed'): ?>
-                        <?php if ($my_status === 'joined'): ?>
-                        <!-- PayPal button -->
-                        <div id="paypal-button-container"></div>
-                        <?php elseif ($my_status === 'paid'): ?>
+                        <?php if ($my_status === 'paid'): ?>
                         <div style="background:#DCFCE7;border-radius:8px;padding:12px;text-align:center;">
                             <span style="color:var(--success);font-weight:600;">✓ Payment complete!</span>
                             <br><a href="<?= APP_URL ?>/pages/my-orders.php" style="font-size:12px;">View your order →</a>
+                        </div>
+                        <?php elseif ($is_member): ?>
+                        <div style="background:#FEF3C7;border-radius:8px;padding:12px;text-align:center;">
+                            <span style="color:#92400E;font-weight:600;">Processing payment…</span>
+                            <br><span style="font-size:12px;color:#92400E;">Your authorization is being captured. Refresh in a moment.</span>
                         </div>
                         <?php endif; ?>
                     <?php endif; ?>
@@ -269,13 +289,17 @@ include __DIR__ . '/../includes/header.php';
                     </div>
                     <?php endforeach; ?>
 
-                    <!-- Empty spots -->
-                    <?php for ($i = count($members); $i < $group['target_participants']; $i++): ?>
+                    <!-- Empty spots (capped at 5 to avoid large DOM) -->
+                    <?php $open = max(0, (int)$group['target_participants'] - count($members)); ?>
+                    <?php for ($i = 0; $i < min($open, 5); $i++): ?>
                     <div style="display:flex;align-items:center;gap:10px;padding:6px 0;opacity:.4;">
                         <div style="width:32px;height:32px;border-radius:50%;border:2px dashed var(--gray-300);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">+</div>
                         <span style="font-size:13px;color:var(--gray-500);">Open spot</span>
                     </div>
                     <?php endfor; ?>
+                    <?php if ($open > 5): ?>
+                    <div style="font-size:12px;color:var(--gray-500);text-align:center;padding:4px 0;">+<?= $open - 5 ?> more open spots</div>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -307,39 +331,85 @@ const MY_STATUS    = '<?= $my_status ?? '' ?>';
 // Leaflet map for business location
 (function() {
     if (!BIZ_LAT || !BIZ_LNG || typeof SmartCartMaps === 'undefined') return;
-    var map = SmartCartMaps.createMap('map-group', BIZ_LAT, BIZ_LNG, 14);
+    var map = SmartCartMaps.createMap('map-group', BIZ_LAT, BIZ_LNG, 16);
     if (!map) return;
-    SmartCartMaps.addMarker(map, BIZ_LAT, BIZ_LNG, '<strong><?= htmlspecialchars($group['business_name']) ?></strong><br><?= htmlspecialchars($group['biz_address'] ?? $group['biz_city']) ?>');
+    SmartCartMaps.addMarker(map, BIZ_LAT, BIZ_LNG, <?= json_encode('<strong>' . htmlspecialchars($group['business_name']) . '</strong><br>' . htmlspecialchars($group['biz_address'] ?? $group['biz_city'] ?? '')) ?>);
 })();
 
-<?php if ($my_status === 'joined' && $group['status'] === 'closed' && defined('PAYPAL_CLIENT_ID') && PAYPAL_CLIENT_ID !== 'YOUR_PAYPAL_SANDBOX_CLIENT_ID'): ?>
-// PayPal SDK
+<?php
+// PayPal Smart Buttons appear on open groups for non-members (V3 authorize-on-join flow).
+$paypal_configured = defined('PAYPAL_CLIENT_ID') && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false && PAYPAL_CLIENT_ID !== '';
+?>
+<?php if (!$is_member && $group['status'] === 'open' && is_logged_in()): ?>
+<?php if ($paypal_configured): ?>
+// PayPal SDK — Smart Buttons for join (authorize, not capture)
 const script = document.createElement('script');
-script.src = 'https://www.paypal.com/sdk/js?client-id=<?= PAYPAL_CLIENT_ID ?>&currency=USD';
+script.src = 'https://www.paypal.com/sdk/js?client-id=<?= htmlspecialchars(PAYPAL_CLIENT_ID) ?>&currency=USD&intent=authorize';
 script.onload = () => {
     paypal.Buttons({
         createOrder: async () => {
-            const res  = await SmartCart.api('/api/payments.php?action=create_order', {
-                method: 'POST', body: JSON.stringify({ group_id: GROUP_ID }),
+            const res = await SmartCart.api('<?= APP_URL ?>/api/groups.php?action=create_join_order&group_id=' + GROUP_ID, {
+                method: 'POST', body: '{}',
             });
-            return res.orderID;
+            return res.order_id;
         },
         onApprove: async (data) => {
-            const shipping = prompt('Enter your shipping address:', '') || '';
-            await SmartCart.api('/api/payments.php?action=capture_order', {
-                method: 'POST',
-                body: JSON.stringify({ orderID: data.orderID, group_id: GROUP_ID, shipping_address: shipping }),
+            await SmartCart.api('<?= APP_URL ?>/api/groups.php?action=complete_join&group_id=' + GROUP_ID, {
+                method: 'POST', body: JSON.stringify({ order_id: data.orderID }),
             });
-            SmartCart.showToast('Payment successful! Check My Orders for details.');
-            setTimeout(() => location.reload(), 1500);
+            SmartCart.showToast('Joined! Payment authorized (you’ll be charged when group succeeds).');
+            setTimeout(() => location.reload(), 1200);
         },
-        onError: (err) => SmartCart.showToast('Payment failed: ' + err.message, 'error'),
+        onCancel: () => SmartCart.showToast('Join cancelled.', 'error'),
+        onError: (err) => SmartCart.showToast('Payment error: ' + err.message, 'error'),
     }).render('#paypal-button-container');
 };
 document.head.appendChild(script);
+<?php else: ?>
+// Dev mode (no PayPal credentials): show a plain Join button. The server-side
+// flow creates a DEV authorization record so the lifecycle still works end-to-end.
+document.getElementById('dev-join-btn').style.display = 'block';
+document.getElementById('paypal-button-container').style.display = 'none';
+<?php endif; ?>
 <?php endif; ?>
 
 // Scroll chat to bottom
 const chatMsgs = document.querySelector('.chat-messages');
 if (chatMsgs) chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+// Live countdown on group deadline
+(function() {
+    const el = document.getElementById('group-countdown');
+    if (!el) return;
+    const deadline = parseInt(el.dataset.deadline, 10) * 1000;
+    function fmt(ms) {
+        const s = Math.max(0, Math.floor(ms / 1000));
+        if (s === 0) { el.textContent = 'Expired'; return; }
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        if (h >= 48) { el.textContent = Math.floor(h / 24) + 'd left'; return; }
+        if (h >= 1)  { el.textContent = h + 'h ' + String(m).padStart(2,'0') + 'm left'; return; }
+        el.textContent = String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0') + ' left';
+    }
+    fmt(deadline - Date.now());
+    setInterval(() => fmt(deadline - Date.now()), 1000);
+})();
+
+// Live participant count polling (every 15s)
+<?php if ($group['status'] === 'open'): ?>
+(function() {
+    const countEl = document.getElementById('live-count');
+    if (!countEl) return;
+    setInterval(async function() {
+        try {
+            const res  = await fetch('<?= APP_URL ?>/api/groups.php?action=get&id=<?= $group_id ?>');
+            const data = await res.json();
+            if (data && data.current_participants !== undefined) {
+                countEl.innerHTML = '<strong>' + data.current_participants + '</strong> / <?= $group['target_participants'] ?> <?= $t['group_members_count'] ?>';
+            }
+        } catch(e) {}
+    }, 15000);
+})();
+<?php endif; ?>
 </script>

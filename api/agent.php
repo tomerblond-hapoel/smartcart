@@ -42,6 +42,16 @@ $user_lat   = $user['lat']  !== null ? (float)$user['lat']  : null;
 $user_lng   = $user['lng']  !== null ? (float)$user['lng']  : null;
 $user_cats  = json_decode($user['preferred_categories'] ?? '[]', true) ?: [];
 
+// Allow the frontend to pass live browser geolocation that overrides the saved profile location
+if (isset($_GET['live_lat']) && isset($_GET['live_lng'])) {
+    $live_lat = (float)$_GET['live_lat'];
+    $live_lng = (float)$_GET['live_lng'];
+    if ($live_lat !== 0.0 || $live_lng !== 0.0) {
+        $user_lat = $live_lat;
+        $user_lng = $live_lng;
+    }
+}
+
 // 2. Load all open group purchases with product + business details
 $gstmt = $pdo->prepare("
     SELECT
@@ -59,7 +69,10 @@ $gstmt = $pdo->prepare("
         p.group_price_ils,
         p.category,
         b.business_name,
-        b.city               AS biz_city
+        b.city               AS biz_city,
+        b.address            AS biz_address,
+        b.lat                AS biz_lat,
+        b.lng                AS biz_lng
     FROM group_purchases gp
     JOIN products p ON p.id = gp.product_id AND p.status = 'active'
     JOIN businesses b ON b.id = p.business_id AND b.status = 'active'
@@ -164,6 +177,7 @@ foreach ($groups as $g) {
         'group_price_ils' => $gprice,
         'price_ils'       => $price,
         'city'            => $g['city'] ?? $g['biz_city'],
+        'address'         => $g['biz_address'] ?? null,
         'category'        => $g['category'],
         'score'           => $score,
         'score_breakdown' => $breakdown,
@@ -174,6 +188,8 @@ foreach ($groups as $g) {
         'days_left'       => $days_left,
         'countdown'       => countdown_label($g['deadline']),
         'distance_km'     => $distance_km !== null ? round($distance_km, 1) : null,
+        'lat'             => $g['group_lat'] !== null ? (float)$g['group_lat'] : ($g['biz_lat'] !== null ? (float)$g['biz_lat'] : null),
+        'lng'             => $g['group_lng'] !== null ? (float)$g['group_lng'] : ($g['biz_lng'] !== null ? (float)$g['biz_lng'] : null),
     ];
 }
 

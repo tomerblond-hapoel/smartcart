@@ -9,11 +9,40 @@
    1. CSS Variables & Reset
 ───────────────────────────────────────────────────────── */
 :root {
-    --purple:        #6f52ff;
-    --purple-dark:   #5b3df5;
-    --purple-deeper: #4426d9;
-    --purple-light:  #e9e4ff;
-    --purple-50:     #f1ecff;
+    /* Semantic theme tokens (default = customer / purple).
+       body.theme-business overrides these — every alias below resolves through them,
+       so existing pages using var(--purple)/var(--btn-gradient) auto-theme. */
+    --primary:        #6f52ff;
+    --primary-dark:   #5b3df5;
+    --primary-deeper: #4426d9;
+    --primary-light:  #e9e4ff;
+    --primary-50:     #f1ecff;
+    --primary-rgb:    111, 82, 255;
+    --primary-gradient: linear-gradient(135deg, #7d63ff 0%, #5b3df5 100%);
+    --primary-gradient-strong: linear-gradient(135deg, #7d63ff 0%, #5b3df5 60%, #4426d9 100%);
+    --primary-gradient-soft: linear-gradient(135deg, #7d63ff, #5b3df5);
+    --primary-gradient-deep: linear-gradient(135deg, #5b3df5 0%, #4426d9 100%);
+    --primary-gradient-bar: linear-gradient(90deg, #7d63ff, #5b3df5);
+    --shadow-primary: 0 8px 24px rgba(var(--primary-rgb), .2), 0 2px 6px rgba(var(--primary-rgb), .1);
+    --on-primary:     #ffffff;
+    --accent-text:    var(--gray-900);
+
+    /* Legacy aliases — keep, dozens of pages depend on them */
+    --purple:        var(--primary);
+    --purple-dark:   var(--primary-dark);
+    --purple-deeper: var(--primary-deeper);
+    --purple-light:  var(--primary-light);
+    --purple-50:     var(--primary-50);
+    --shadow-purple: var(--shadow-primary);
+    --btn-gradient:  var(--primary-gradient);
+    --teal:          var(--primary);
+    --teal-dark:     var(--primary-dark);
+    --teal-deep:     var(--primary-deeper);
+    --teal-light:    var(--primary-light);
+    --teal-50:       var(--primary-50);
+    --shadow-teal:   var(--shadow-primary);
+    --teal-gradient: var(--primary-gradient-strong);
+
     --green:         #1ac785;
     --green-soft:    rgba(26,199,133,0.1);
     --green-dark:    #15a368;
@@ -41,19 +70,28 @@
     --shadow:        0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.06);
     --shadow-md:     0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
     --shadow-lg:     0 12px 32px rgba(0,0,0,.12), 0 4px 8px rgba(0,0,0,.06);
-    --shadow-purple: 0 8px 24px rgba(111,82,255,.2), 0 2px 6px rgba(111,82,255,.1);
-    /* Legacy aliases — so existing PHP pages using var(--teal) still work */
-    --teal:        #6f52ff;
-    --teal-dark:   #5b3df5;
-    --teal-deep:   #4426d9;
-    --teal-light:  #e9e4ff;
-    --teal-50:     #f1ecff;
-    --shadow-teal: 0 8px 24px rgba(111,82,255,.2), 0 2px 6px rgba(111,82,255,.1);
-    --teal-gradient: linear-gradient(135deg, #7d63ff 0%, #5b3df5 60%, #4426d9 100%);
 
     --font:          'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --nav-height:    64px;
-    --btn-gradient:  linear-gradient(135deg, #7d63ff 0%, #5b3df5 100%);
+}
+
+/* Customer theme — default; explicit class for intent clarity. */
+body.theme-customer {}
+
+/* Business theme — orange. Overrides --primary*, every alias resolves through it. */
+body.theme-business {
+    --primary:        #ea580c;
+    --primary-dark:   #c2410c;
+    --primary-deeper: #9a3412;
+    --primary-light:  #fed7aa;
+    --primary-50:     #fff7ed;
+    --primary-rgb:    234, 88, 12;
+    --primary-gradient: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    --primary-gradient-strong: linear-gradient(135deg, #f97316 0%, #ea580c 50%, #9a3412 100%);
+    --primary-gradient-soft: linear-gradient(135deg, #f97316, #ea580c);
+    --primary-gradient-deep: linear-gradient(135deg, #ea580c 0%, #9a3412 100%);
+    --primary-gradient-bar: linear-gradient(90deg, #f97316, #ea580c);
+    --accent-text:    #1f2937;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -109,12 +147,12 @@ img { max-width: 100%; height: auto; display: block; }
     flex-shrink: 0;
 }
 
-/* Purple gradient logo icon (replaces cart SVG in brand) */
+/* Primary gradient logo icon (replaces cart SVG in brand) */
 .navbar-brand .logo-icon {
     width: 38px;
     height: 38px;
     border-radius: 12px;
-    background: linear-gradient(135deg, #7d63ff, #5b3df5);
+    background: var(--primary-gradient-soft);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -193,14 +231,14 @@ img { max-width: 100%; height: auto; display: block; }
 .btn:active { transform: translateY(1px); }
 
 .btn-primary {
-    background: var(--btn-gradient);
+    background: var(--primary-gradient);
     color: var(--white);
-    box-shadow: 0 1px 4px rgba(111,82,255,.35), 0 1px 2px rgba(0,0,0,.05);
+    box-shadow: 0 1px 4px rgba(var(--primary-rgb),.35), 0 1px 2px rgba(0,0,0,.05);
 }
 .btn-primary:hover {
-    background: linear-gradient(135deg, #5b3df5 0%, #4426d9 100%);
+    background: var(--primary-gradient-deep);
     color: var(--white);
-    box-shadow: 0 4px 14px rgba(111,82,255,.4);
+    box-shadow: 0 4px 14px rgba(var(--primary-rgb),.4);
     transform: translateY(-1px);
 }
 
@@ -237,7 +275,7 @@ img { max-width: 100%; height: auto; display: block; }
     white-space: nowrap;
 }
 .btn-filter:hover { border-color: var(--purple); color: var(--purple); background: var(--purple-50); }
-.btn-filter.active { background: var(--purple); color: var(--white); border-color: var(--purple); box-shadow: 0 2px 8px rgba(111,82,255,.3); }
+.btn-filter.active { background: var(--primary); color: var(--white); border-color: var(--primary); box-shadow: 0 2px 8px rgba(var(--primary-rgb),.3); }
 
 /* Hero-specific buttons */
 .btn-white { background: var(--white); color: var(--purple); font-weight: 700; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
@@ -372,6 +410,7 @@ img { max-width: 100%; height: auto; display: block; }
 }
 .choice-icon.purple { background: var(--purple-50); color: var(--purple); }
 .choice-icon.green  { background: #dff5ec; color: var(--green); }
+.choice-icon.orange { background: #fff7ed; color: #ea580c; }
 
 .choice-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
 .choice-card > p { font-size: 15px; color: var(--muted); line-height: 1.6; margin-bottom: 18px; }
@@ -499,8 +538,8 @@ img { max-width: 100%; height: auto; display: block; }
 }
 .form-control:focus {
     outline: none;
-    border-color: var(--purple);
-    box-shadow: 0 0 0 3px rgba(111,82,255,.12);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb),.12);
 }
 .form-control::placeholder { color: var(--gray-300); }
 
@@ -614,8 +653,8 @@ textarea.form-control { resize: vertical; min-height: 110px; padding-top: 14px; 
     font-size: 12px;
     padding: 6px 14px;
     border-radius: 999px;
-    background: rgba(111,82,255,.1);
-    color: var(--purple);
+    background: rgba(var(--primary-rgb),.1);
+    color: var(--primary);
     font-weight: 600;
     margin-bottom: 16px;
 }
@@ -667,7 +706,7 @@ textarea.form-control { resize: vertical; min-height: 110px; padding-top: 14px; 
 }
 
 .hero h1 span {
-    background: linear-gradient(90deg, #7d63ff, #5b3df5);
+    background: var(--primary-gradient-bar);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -681,9 +720,9 @@ textarea.form-control { resize: vertical; min-height: 110px; padding-top: 14px; 
     line-height: 1.7;
 }
 
-/* Legacy hero (teal gradient) — kept for any pages that still use it */
+/* Legacy hero (gradient) — kept for any pages that still use it */
 .hero-gradient {
-    background: linear-gradient(135deg, #7d63ff 0%, #5b3df5 60%, #4426d9 100%);
+    background: var(--primary-gradient-strong);
     color: var(--white);
 }
 .hero-gradient h1 { color: var(--white); }
@@ -883,7 +922,7 @@ tbody tr:hover { background: var(--gray-50); }
     padding: 14px 16px;
     transition: box-shadow .15s;
 }
-.scoring-card:hover { box-shadow: 0 2px 12px rgba(111,82,255,.12); }
+.scoring-card:hover { box-shadow: 0 2px 12px rgba(var(--primary-rgb),.12); }
 .scoring-card-title {
     display: flex;
     align-items: center;
@@ -1151,4 +1190,85 @@ body.rtl .step-card { text-align: right; }
     .container { padding: 0 16px; }
     .hero h1 { font-size: 32px; }
     .stats-row { gap: 24px; }
+}
+
+/* ─────────────────────────────────────────────────────────
+   23. Bottom Navigation Bar (mobile, per mockup section 4.1)
+───────────────────────────────────────────────────────── */
+.bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 64px;
+    background: var(--white);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 20px rgba(0,0,0,.08);
+    z-index: 1000;
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--gray-400);
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: 500;
+    transition: color .15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav-item svg { stroke: currentColor; transition: stroke .15s; }
+.bottom-nav-item span { letter-spacing: .01em; }
+
+.bottom-nav-item.active,
+.bottom-nav-item:hover {
+    color: var(--teal);
+}
+
+@media (max-width: 768px) {
+    .bottom-nav { display: flex; }
+    .main-content { padding-bottom: 64px; }
+    .site-footer  { padding-bottom: 72px; }
+}
+
+/* RTL bottom nav */
+body.rtl .bottom-nav { flex-direction: row-reverse; }
+
+/* ─────────────────────────────────────────────────────────
+   24. Countdown timer chip
+───────────────────────────────────────────────────────── */
+.countdown-timer {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .03em;
+}
+
+/* ─────────────────────────────────────────────────────────
+   25. V3 Mobile Responsive Fixes (≤ 600px)
+───────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    /* Inline grids that hardcode 1fr 360px or 1fr 1fr collapse */
+    [style*="grid-template-columns:1fr 360px"],
+    [style*="grid-template-columns: 1fr 360px"],
+    [style*="grid-template-columns:1fr 1fr"],
+    [style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+    /* Five-column stats bars in business dashboard collapse to 2 cols */
+    [style*="grid-template-columns:repeat(5,1fr)"],
+    [style*="grid-template-columns: repeat(5, 1fr)"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    /* Tables: allow horizontal scroll */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* Page-header h1 size */
+    .page-header h1 { font-size: 22px; }
 }

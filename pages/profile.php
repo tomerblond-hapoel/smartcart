@@ -6,6 +6,16 @@ require_once __DIR__ . '/../includes/auth_check.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 require_login();
+
+// Customer profile only — businesses and admins have their own profile pages.
+$role = current_user_role();
+if ($role === 'business') {
+    header('Location: ' . APP_URL . '/pages/business/profile.php'); exit;
+}
+if ($role === 'admin') {
+    header('Location: ' . APP_URL . '/pages/admin/dashboard.php'); exit;
+}
+
 $user_id = current_user_id();
 $user    = get_current_user_data();
 

@@ -27,9 +27,92 @@ switch ($action) {
     case 'me':       handle_me();             break;
     case 'update_profile': handle_update_profile($input); break;
     case 'change_password': handle_change_password($input); break;
+    case 'request_reset': handle_request_reset($input); break;
+    case 'confirm_reset': handle_confirm_reset($input); break;
     default:
         http_response_code(400);
         echo json_encode(['error' => 'Unknown action']);
+}
+
+// ─────────────────────────────────────────────────────────
+function handle_request_reset(array $input): void {
+    $email = trim($input['email'] ?? '');
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        echo json_encode(['success' => true]); return;
+    }
+
+    // Anti-spam: 5 reset requests per IP per hour
+    require_once __DIR__ . '/../includes/rate_limit.php';
+    if (!rate_check(rate_key_for_ip('reset_request'), 5, 3600)) {
+        echo json_encode(['success' => true]); // silent — don't leak rate limit
+        return;
+    }
+    $pdo = getPDO();
+    $stmt = $pdo->prepare('SELECT id, full_name FROM users WHERE email = ? AND is_active = 1');
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
+
+    if ($user) {
+        // Generate token, store hash
+        $token = bin2hex(random_bytes(32));
+        $hash  = hash('sha256', $token);
+        $expires = date('Y-m-d H:i:s', time() + 3600); // 1 hour
+        $pdo->prepare('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)')
+            ->execute([$user['id'], $hash, $expires]);
+
+        // Email link via notify (best-effort)
+        require_once __DIR__ . '/../includes/notifications.php';
+        $link = APP_URL . '/pages/reset-password.php?token=' . urlencode($token);
+        notify((int)$user['id'], 'password_reset',
+            'Password reset requested',
+            "Hi " . $user['full_name'] . ",\n\nWe received a request to reset your password. Click the link below within 1 hour:\n\n" . $link . "\n\nIf you didn't request this, you can ignore this message.",
+            $link, ['token' => substr($token, 0, 8) . '…']);
+    }
+    // Always return success to prevent enumeration
+    echo json_encode(['success' => true]);
+}
+
+// ─────────────────────────────────────────────────────────
+function handle_confirm_reset(array $input): void {
+    $token = trim($input['token'] ?? '');
+    $new   = $input['new_password'] ?? '';
+    if (!$token || strlen($new) < 8) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Token and new password (min 8 chars) required']);
+        return;
+    }
+    $hash = hash('sha256', $token);
+    $pdo  = getPDO();
+    $stmt = $pdo->prepare('SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ?');
+    $stmt->execute([$hash]);
+    $row = $stmt->fetch();
+
+    if (!$row || $row['used_at'] !== null || strtotime($row['expires_at']) < time()) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Token is invalid or has expired']);
+        return;
+    }
+
+    $new_hash = password_hash($new, PASSWORD_BCRYPT);
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([$new_hash, $row['user_id']]);
+        $pdo->prepare('UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ?')->execute([$row['id']]);
+        $pdo->commit();
+    } catch (\Throwable $e) {
+        $pdo->rollBack();
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to update password']);
+        return;
+    }
+
+    require_once __DIR__ . '/../includes/notifications.php';
+    notify((int)$row['user_id'], 'password_changed',
+        'Password changed successfully',
+        'Your SmartCart password was updated. If this wasn\'t you, contact support immediately.',
+        APP_URL . '/pages/login.php');
+
+    echo json_encode(['success' => true]);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -40,6 +123,14 @@ function handle_login(array $input): void {
     if (!$email || !$password) {
         http_response_code(400);
         echo json_encode(['error' => 'Email and password required']);
+        return;
+    }
+
+    // Brute-force protection: 10 attempts per IP per 15 min
+    require_once __DIR__ . '/../includes/rate_limit.php';
+    if (!rate_check(rate_key_for_ip('login'), 10, 900)) {
+        http_response_code(429);
+        echo json_encode(['error' => 'Too many login attempts. Try again in 15 minutes.']);
         return;
     }
 
@@ -152,6 +243,16 @@ function handle_register(array $input): void {
     $_SESSION['user_id']   = $user_id;
     $_SESSION['user_role'] = $role;
     $_SESSION['user_name'] = $name;
+
+    // Welcome notification
+    require_once __DIR__ . '/../includes/notifications.php';
+    $welcome_link = $role === 'business' ? '/pages/business/dashboard.php' : '/pages/index.php';
+    notify($user_id, 'welcome',
+        'Welcome to SmartCart, ' . $name . '!',
+        $role === 'business'
+            ? 'Your business account is ready. Create your first deal to start selling.'
+            : 'Discover group deals near you and save big with collective buying.',
+        APP_URL . $welcome_link);
 
     echo json_encode([
         'success' => true,

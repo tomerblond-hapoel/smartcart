@@ -48,8 +48,16 @@ function list_products(): void {
         $params[] = $category;
     }
     if ($city) {
-        $where[]  = 'p.city LIKE ?';
-        $params[] = "%$city%";
+        $clean = trim(preg_replace('/[-,].*$/u', '', $city));
+        $tokens = preg_split('/\s+/u', $clean, -1, PREG_SPLIT_NO_EMPTY);
+        $tokens = array_filter($tokens, fn($t) => mb_strlen($t) >= 2);
+        if (!$tokens) $tokens = [$city];
+        $parts = [];
+        foreach ($tokens as $tok) {
+            $parts[] = '(p.city LIKE ? OR b.city LIKE ? OR b.address LIKE ?)';
+            $params[] = "%$tok%"; $params[] = "%$tok%"; $params[] = "%$tok%";
+        }
+        $where[] = '(' . implode(' OR ', $parts) . ')';
     }
 
     if ($sort === 'discount') {
@@ -77,8 +85,8 @@ function list_products(): void {
     $stmt->execute($params);
     $products = $stmt->fetchAll();
 
-    // Count
-    $count_sql = "SELECT COUNT(*) FROM products p WHERE " . implode(' AND ', $where);
+    // Count — must use same JOINs as the main query (where clause references b.city, b.address)
+    $count_sql = "SELECT COUNT(*) FROM products p JOIN businesses b ON b.id = p.business_id WHERE " . implode(' AND ', $where);
     $count_stmt = $pdo->prepare($count_sql);
     $count_stmt->execute($params);
     $total = (int)$count_stmt->fetchColumn();
@@ -148,12 +156,16 @@ function create_product(): void {
     $city     = trim($body['city']        ?? '');
     $lat      = isset($body['lat']) && $body['lat'] !== '' ? (float)$body['lat'] : null;
     $lng      = isset($body['lng']) && $body['lng'] !== '' ? (float)$body['lng'] : null;
+    $deadline = trim($body['deadline']    ?? '');
 
     if (!$name || $price <= 0 || $gprice <= 0) {
         json_response(['error' => 'Name, price, and group price are required'], 400);
     }
     if ($gprice >= $price) {
         json_response(['error' => 'Group price must be less than original price'], 400);
+    }
+    if (!$deadline || strtotime($deadline) <= time()) {
+        json_response(['error' => 'A future deadline is required'], 400);
     }
 
     // Get business_id for this user
@@ -172,13 +184,28 @@ function create_product(): void {
         if ($coords) { $lat = $coords['lat']; $lng = $coords['lng']; }
     }
 
-    $stmt = $pdo->prepare("
-        INSERT INTO products (business_id, name, description, price_ils, group_price_ils, category, min_participants, image_url, city, lat, lng)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->execute([$business_id, $name, $desc, $price, $gprice, $category, $min_p, $image ?: null, $city ?: null, $lat, $lng]);
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO products (business_id, name, description, price_ils, group_price_ils, category, min_participants, image_url, city, lat, lng)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([$business_id, $name, $desc, $price, $gprice, $category, $min_p, $image ?: null, $city ?: null, $lat, $lng]);
+        $product_id = (int)$pdo->lastInsertId();
 
-    json_response(['success' => true, 'product_id' => (int)$pdo->lastInsertId()], 201);
+        // Automatically create the group_purchase (the "deal") for this product
+        $dl = date('Y-m-d H:i:s', strtotime($deadline));
+        $pdo->prepare("
+            INSERT INTO group_purchases (product_id, creator_id, target_participants, deadline, city, lat, lng, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+        ")->execute([$product_id, $user_id, $min_p, $dl, $city ?: null, $lat, $lng]);
+
+        $pdo->commit();
+        json_response(['success' => true, 'product_id' => $product_id], 201);
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        json_response(['error' => 'Failed to create deal'], 500);
+    }
 }
 
 // ─────────────────────────────────────────────────────────

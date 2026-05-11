@@ -205,7 +205,7 @@ include __DIR__ . '/../includes/header.php';
     if (!map) return;
     SmartCartMaps.addMarker(
         map, lat, lng,
-        '<strong><?= htmlspecialchars($product['business_name']) ?></strong><br><?= htmlspecialchars($product['biz_city'] ?? '') ?>'
+        <?= json_encode('<strong>' . htmlspecialchars($product['business_name']) . '</strong><br>' . htmlspecialchars($product['biz_city'] ?? '')) ?>
     );
 })();
 </script>

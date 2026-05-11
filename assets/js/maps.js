@@ -23,11 +23,24 @@ SmartCartMaps.createMap = function(elementId, lat, lng, zoom) {
     var el = document.getElementById(elementId);
     if (!el) return null;
 
+    // scrollWheelZoom starts disabled so users can scroll the PAGE through the map
+    // without accidentally zooming. It activates on hover (after a short delay)
+    // and deactivates when the mouse leaves — matches user request.
     var map = L.map(elementId, { scrollWheelZoom: false }).setView([lat, lng], zoom);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
     }).addTo(map);
+
+    var hoverTimer = null;
+    el.addEventListener('mouseenter', function() {
+        // ~250ms delay prevents accidental activation when cursor only passes through
+        hoverTimer = setTimeout(function() { map.scrollWheelZoom.enable(); }, 250);
+    });
+    el.addEventListener('mouseleave', function() {
+        clearTimeout(hoverTimer);
+        map.scrollWheelZoom.disable();
+    });
 
     return map;
 };
@@ -72,6 +85,81 @@ SmartCartMaps.fitBounds = function(map, markers) {
 
 /** Default center — Gush Dan */
 SmartCartMaps.ISRAEL_CENTER = { lat: 32.0853, lng: 34.7818 };
+
+/**
+ * Add the user's location to the map as a blue pulsing marker.
+ * @param {L.Map}  map
+ * @param {number} lat
+ * @param {number} lng
+ * @returns {L.CircleMarker}
+ */
+SmartCartMaps.addMyLocationMarker = function(map, lat, lng) {
+    var marker = L.circleMarker([lat, lng], {
+        radius:      9,
+        fillColor:   '#2563eb',
+        fillOpacity: 1,
+        color:       '#fff',
+        weight:      3,
+    }).addTo(map);
+    marker.bindPopup('<strong>You are here</strong>', { maxWidth: 200 });
+    // Also draw a faint accuracy ring
+    L.circle([lat, lng], {
+        radius:      400,
+        fillColor:   '#2563eb',
+        fillOpacity: 0.08,
+        color:       '#2563eb',
+        weight:      1,
+        opacity:     0.4,
+    }).addTo(map);
+    return marker;
+};
+
+/**
+ * Promise-based current location via browser geolocation API.
+ * Resolves with { lat, lng, accuracy } or rejects with Error.
+ * Pass { timeout, maximumAge } to override defaults.
+ */
+SmartCartMaps.getCurrentLocation = function(opts) {
+    opts = Object.assign({ enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }, opts || {});
+    return new Promise(function(resolve, reject) {
+        if (!navigator.geolocation) {
+            reject(new Error('Geolocation not supported by this browser'));
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                resolve({
+                    lat:      pos.coords.latitude,
+                    lng:      pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                });
+            },
+            function(err) {
+                var msgs = {
+                    1: 'Location permission denied',
+                    2: 'Location unavailable',
+                    3: 'Location request timed out',
+                };
+                reject(new Error(msgs[err.code] || err.message || 'Location error'));
+            },
+            opts
+        );
+    });
+};
+
+/**
+ * Haversine distance between two coords (km).
+ */
+SmartCartMaps.distanceKm = function(lat1, lng1, lat2, lng2) {
+    var R = 6371;
+    var toRad = function(d) { return d * Math.PI / 180; };
+    var dLat = toRad(lat2 - lat1);
+    var dLng = toRad(lng2 - lng1);
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+};
 
 // ─────────────────────────────────────────────────────────
 // Photon Autocomplete  (Israel bbox, 300 ms debounce)
@@ -252,4 +340,76 @@ SmartCartMaps.initCityAutocomplete = function(inputId, latInputId, lngInputId) {
             hideDropdown();
         }
     });
+};
+
+/**
+ * Attach a full-address autocomplete (street + city) to a text input.
+ * Same interface as initCityAutocomplete but returns street-level matches.
+ */
+SmartCartMaps.initAddressAutocomplete = function(inputId, latInputId, lngInputId) {
+    var input = document.getElementById(inputId);
+    var latIn = latInputId ? document.getElementById(latInputId) : null;
+    var lngIn = lngInputId ? document.getElementById(lngInputId) : null;
+    if (!input) return;
+
+    var wrapper = input.parentElement;
+    if (window.getComputedStyle(wrapper).position === 'static') wrapper.style.position = 'relative';
+
+    var dropdown = document.createElement('div');
+    dropdown.style.cssText = 'position:absolute;z-index:9999;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);width:100%;max-height:260px;overflow-y:auto;display:none;top:calc(100% + 4px);left:0';
+    wrapper.appendChild(dropdown);
+
+    var debounceTimer = null;
+    var lastQuery = '';
+
+    function hide() { dropdown.style.display = 'none'; lastQuery = ''; }
+
+    function fetchSuggestions(q) {
+        if (q === lastQuery) return;
+        lastQuery = q;
+        // Use Nominatim directly for street-level addresses (Photon doesn't index Israel street-level well)
+        fetch('https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(q + ', Israel') +
+              '&format=json&limit=6&addressdetails=1&countrycodes=il', {
+            headers: { 'Accept': 'application/json' },
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(data) { render(data || []); })
+            .catch(hide);
+    }
+
+    function render(items) {
+        dropdown.innerHTML = '';
+        if (!items.length) { hide(); return; }
+        items.forEach(function(it) {
+            var div = document.createElement('div');
+            div.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6';
+            var primary  = it.display_name.split(',').slice(0, 3).join(',');
+            var secondary = it.display_name.split(',').slice(3).join(',').trim();
+            div.innerHTML =
+                '<div style="font-weight:600;color:#111827">' + escHtml(primary) + '</div>' +
+                (secondary ? '<div style="color:#6b7280;font-size:11px;margin-top:2px">' + escHtml(secondary) + '</div>' : '');
+            div.addEventListener('mouseenter', function() { this.style.background = '#f9fafb'; });
+            div.addEventListener('mouseleave', function() { this.style.background = ''; });
+            div.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                input.value = primary;
+                if (latIn) latIn.value = it.lat;
+                if (lngIn) lngIn.value = it.lon;
+                hide();
+                input.dispatchEvent(new Event('change'));
+            });
+            dropdown.appendChild(div);
+        });
+        dropdown.style.display = 'block';
+    }
+
+    input.addEventListener('input', function() {
+        var q = this.value.trim();
+        if (latIn) latIn.value = '';
+        if (lngIn) lngIn.value = '';
+        clearTimeout(debounceTimer);
+        if (q.length < 3) { hide(); return; }
+        debounceTimer = setTimeout(function() { fetchSuggestions(q); }, 350);
+    });
+    input.addEventListener('blur', function() { setTimeout(hide, 200); });
 };

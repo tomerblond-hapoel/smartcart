@@ -9,6 +9,10 @@ if (is_logged_in()) {
     exit;
 }
 
+$as = $_GET['as'] ?? 'customer';
+if (!in_array($as, ['customer','business'], true)) $as = 'customer';
+$force_theme = $as;
+
 $page_title = $t['login_title'];
 $error = '';
 $email_val = '';
@@ -44,7 +48,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_name'] = $user['full_name'];
             }
             $_SESSION['flash_success'] = 'Welcome back, ' . ($user['full_name'] ?? '') . '!';
-            header('Location: ' . APP_URL . '/pages/index.php');
+            $dest = '/pages/index.php';
+            if (($user['role'] ?? '') === 'business') $dest = '/pages/business/dashboard.php';
+            elseif (($user['role'] ?? '') === 'admin') $dest = '/pages/admin/dashboard.php';
+            header('Location: ' . APP_URL . $dest);
             exit;
         } else {
             $data  = json_decode($resp, true);
@@ -66,13 +73,23 @@ include __DIR__ . '/../includes/header.php';
 <div class="container container-sm" style="padding-top: 60px; padding-bottom: 60px;">
     <div class="card" style="max-width: 420px; margin: 0 auto;">
         <div class="card-body" style="padding: 36px;">
-            <div style="text-align:center; margin-bottom: 28px;">
+            <div style="text-align:center; margin-bottom: 24px;">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="1.5" style="margin: 0 auto 12px;">
                     <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
                     <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
                 </svg>
                 <h1 style="font-size:22px; font-weight:700; color:var(--gray-900);"><?= $t['login_title'] ?></h1>
-                <p style="color:var(--gray-500); margin-top:6px; font-size:14px;">Sign in to your SmartCart account</p>
+            </div>
+            <!-- Role toggle — visual signals which world you're entering. Login itself is role-agnostic. -->
+            <div style="display:flex;background:var(--gray-100);border-radius:10px;padding:4px;margin-bottom:24px;">
+                <button type="button" id="toggle-customer" onclick="setLoginRole('customer')"
+                    style="flex:1;padding:8px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;<?= $as === 'customer' ? 'background:var(--primary);color:#fff;' : 'background:transparent;color:var(--gray-500);' ?>">
+                    🛍️ Customer
+                </button>
+                <button type="button" id="toggle-business" onclick="setLoginRole('business')"
+                    style="flex:1;padding:8px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;<?= $as === 'business' ? 'background:var(--primary);color:#fff;' : 'background:transparent;color:var(--gray-500);' ?>">
+                    🏪 Business
+                </button>
             </div>
 
             <?php if ($error): ?>
@@ -98,7 +115,11 @@ include __DIR__ . '/../includes/header.php';
                 </button>
             </form>
 
-            <p style="text-align:center; margin-top:20px; font-size:14px; color:var(--gray-500);">
+            <p style="text-align:center; margin-top:14px; font-size:13px;">
+                <a href="<?= APP_URL ?>/pages/forgot-password.php" style="color:var(--gray-500);">Forgot password?</a>
+            </p>
+
+            <p style="text-align:center; margin-top:6px; font-size:14px; color:var(--gray-500);">
                 <?= $t['login_no_account'] ?>
                 <a href="<?= APP_URL ?>/pages/register.php" style="font-weight:600;"><?= $t['login_register_link'] ?></a>
             </p>
@@ -114,6 +135,25 @@ include __DIR__ . '/../includes/header.php';
 <?php include __DIR__ . '/../includes/footer.php'; ?>
 
 <script>
+// Role toggle — visual only; flips body theme so the page color matches the world
+function setLoginRole(role) {
+    const cBtn = document.getElementById('toggle-customer');
+    const bBtn = document.getElementById('toggle-business');
+    const base = 'flex:1;padding:8px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;';
+    const active = 'background:var(--primary);color:#fff;';
+    const inactive = 'background:transparent;color:var(--gray-500);';
+    if (role === 'customer') {
+        cBtn.style.cssText = base + active;
+        bBtn.style.cssText = base + inactive;
+    } else {
+        bBtn.style.cssText = base + active;
+        cBtn.style.cssText = base + inactive;
+    }
+    document.body.classList.remove('theme-customer','theme-business');
+    document.body.classList.add('theme-' + role);
+    history.replaceState(null, '', '?as=' + role);
+}
+
 // Handle login form via fetch (clean SPA-like experience)
 document.getElementById('login-form').addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -132,7 +172,13 @@ document.getElementById('login-form').addEventListener('submit', async function(
         });
         const data = await res.json();
         if (res.ok) {
-            window.location.href = '<?= APP_URL ?>/pages/index.php';
+            const role = data.user && data.user.role;
+            const dest = role === 'business'
+                ? '/pages/business/dashboard.php'
+                : role === 'admin'
+                ? '/pages/admin/dashboard.php'
+                : '/pages/index.php';
+            window.location.href = '<?= APP_URL ?>' + dest;
         } else {
             document.querySelector('.flash-error')?.remove();
             const err = document.createElement('div');

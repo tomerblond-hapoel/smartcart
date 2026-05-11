@@ -194,7 +194,7 @@ function renderAgentCard(r, rank) {
                     ${breakdownHtml(r.score_breakdown)}
                 </div>
             </details>
-            <a href="/pages/group.php?id=${r.group_id}" class="btn btn-primary btn-full mt-16">Join Group</a>
+            <a href="${APP_URL}/pages/group.php?id=${r.group_id}" class="btn btn-primary btn-full mt-16">Join Group</a>
         </div>
     </div>`;
 }

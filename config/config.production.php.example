@@ -1,0 +1,36 @@
+<?php
+// SmartCart — PRODUCTION config template
+// Copy to config.php on the live server and fill in real values. NEVER commit this filled-in.
+
+// Database — CPanel credentials from "MySQL Databases"
+define('DB_HOST', 'localhost');
+define('DB_PORT', '3306');
+define('DB_NAME', 'noati2_smartcart');
+define('DB_USER', 'noati2_smartcart');
+define('DB_PASS', 'CHANGE_ME');
+
+// Environment & URL — flips session cookies to Secure
+define('APP_ENV',  'production');
+define('APP_URL',  'https://noati2.mtacloud.co.il/smart');
+define('APP_NAME', 'SmartCart');
+
+// PayPal — Optional for academic demos.
+// Leave the 'your_paypal_*' placeholders to activate Dev Mode automatically:
+//   Join Group creates a synthetic authorization (auth_status='authorized', auth_id='DEV-AUTH-...')
+//   and the full lifecycle (capture/void/refund) works on synthetic records.
+// For real PayPal: Sandbox = https://api-m.sandbox.paypal.com  |  Live = https://api-m.paypal.com
+define('PAYPAL_CLIENT_ID',  'your_paypal_sandbox_client_id');
+define('PAYPAL_SECRET',     'your_paypal_sandbox_secret');
+define('PAYPAL_BASE_URL',   'https://api-m.sandbox.paypal.com');
+define('PAYPAL_CURRENCY',   'ILS');
+
+// Optional: Google Maps API key (if needed for richer maps; otherwise leave empty)
+define('GMAPS_API_KEY', '');
+
+// Currency / session
+define('ILS_TO_USD_RATE', 3.7);
+define('SESSION_LIFETIME', 60 * 60 * 24 * 7);
+
+// Email (mail() best-effort dispatch). Server must have sendmail/Postfix configured.
+define('MAIL_FROM',      'noreply@noati2.mtacloud.co.il');
+define('MAIL_FROM_NAME', 'SmartCart');

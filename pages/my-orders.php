@@ -49,7 +49,7 @@ include __DIR__ . '/../includes/header.php';
             $step_index = array_search($o['shipping_status'], $shipping_steps);
             $savings    = (float)$o['price_ils'] - (float)$o['amount_paid'];
         ?>
-        <div class="card">
+        <div class="card" data-order-id="<?= $o['id'] ?>" data-shipping-status="<?= htmlspecialchars($o['shipping_status']) ?>">
             <div class="card-body">
                 <div style="display:flex;gap:16px;margin-bottom:20px;">
                     <?php if ($o['image_url']): ?>
@@ -105,3 +105,30 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
+
+<script>
+// Live order status polling — toast + reload when shipping_status changes
+(function() {
+    const initial = {};
+    document.querySelectorAll('[data-order-id]').forEach(el => {
+        initial[el.dataset.orderId] = el.dataset.shippingStatus || '';
+    });
+    if (Object.keys(initial).length === 0) return;
+    async function tick() {
+        try {
+            const res = await fetch('<?= APP_URL ?>/api/orders.php?action=list', { credentials: 'same-origin' });
+            if (!res.ok) return;
+            const data = await res.json();
+            let changed = false;
+            (data.orders || []).forEach(o => {
+                if (initial[o.id] && initial[o.id] !== o.shipping_status) { changed = true; }
+            });
+            if (changed && typeof SmartCart !== 'undefined') {
+                SmartCart.showToast('Order status updated — refreshing…');
+                setTimeout(() => location.reload(), 1000);
+            }
+        } catch (e) {}
+    }
+    setInterval(tick, 30000);
+})();
+</script>

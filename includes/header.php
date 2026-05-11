@@ -18,6 +18,20 @@ $user_role    = $_SESSION['user_role'] ?? null;
 $user_name    = $_SESSION['user_name'] ?? null;
 $is_logged_in = !empty($_SESSION['user_id']);
 
+// Theme class — page may set $force_theme = 'customer'|'business' to override.
+// Otherwise derived from URL path or session role. Default = customer (purple).
+$is_business_path = strpos($_SERVER['PHP_SELF'], '/pages/business/') !== false;
+$is_admin_path    = strpos($_SERVER['PHP_SELF'], '/pages/admin/')    !== false;
+if (!empty($force_theme) && in_array($force_theme, ['customer','business'], true)) {
+    $theme_class = 'theme-' . $force_theme;
+} elseif ($is_admin_path) {
+    $theme_class = 'theme-admin';
+} elseif ($is_business_path || $user_role === 'business') {
+    $theme_class = 'theme-business';
+} else {
+    $theme_class = 'theme-customer';
+}
+
 $title = ($page_title ?? 'SmartCart') . ' — ' . APP_NAME;
 ?>
 <!DOCTYPE html>
@@ -27,7 +41,7 @@ $title = ($page_title ?? 'SmartCart') . ' — ' . APP_NAME;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="app-url" content="<?= APP_URL ?>">
     <title><?= htmlspecialchars($title) ?></title>
-    <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/style.css">
+    <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/style.css?v=2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
     <?php if (!empty($needs_map)): ?>
@@ -36,7 +50,7 @@ $title = ($page_title ?? 'SmartCart') . ' — ' . APP_NAME;
     <script src="<?= APP_URL ?>/assets/js/maps.js"></script>
     <?php endif; ?>
 </head>
-<body class="<?= $lang_class ?? '' ?>">
+<body class="<?= $lang_class ?? '' ?> <?= $theme_class ?>">
 
 <nav class="navbar">
     <div class="navbar-container">
@@ -52,19 +66,23 @@ $title = ($page_title ?? 'SmartCart') . ' — ' . APP_NAME;
         </a>
 
         <div class="navbar-links">
+            <?php if ($user_role !== 'business'): ?>
             <a href="<?= APP_URL ?>/pages/browse.php" class="<?= $current_page === 'browse.php' ? 'active' : '' ?>">
                 <?= $t['nav_browse'] ?>
             </a>
             <a href="<?= APP_URL ?>/pages/agent.php" class="<?= $current_page === 'agent.php' ? 'active' : '' ?>">
                 <?= $t['nav_agent'] ?>
             </a>
+            <?php endif; ?>
             <?php if ($is_logged_in): ?>
+            <?php if ($user_role !== 'business'): ?>
             <a href="<?= APP_URL ?>/pages/my-groups.php" class="<?= $current_page === 'my-groups.php' ? 'active' : '' ?>">
                 <?= $t['nav_my_groups'] ?>
             </a>
             <a href="<?= APP_URL ?>/pages/my-orders.php" class="<?= $current_page === 'my-orders.php' ? 'active' : '' ?>">
                 <?= $t['nav_my_orders'] ?>
             </a>
+            <?php endif; ?>
             <?php if ($user_role === 'business'): ?>
             <a href="<?= APP_URL ?>/pages/business/dashboard.php" class="<?= $current_page === 'dashboard.php' ? 'active' : '' ?>">
                 <?= $t['nav_business'] ?>
@@ -80,7 +98,12 @@ $title = ($page_title ?? 'SmartCart') . ' — ' . APP_NAME;
 
         <div class="navbar-right">
             <?php if ($is_logged_in): ?>
-                <a href="<?= APP_URL ?>/pages/profile.php" class="btn btn-ghost btn-sm">
+                <a href="<?= APP_URL ?>/pages/notifications.php" class="btn btn-ghost btn-sm" id="notif-bell" style="position:relative;" title="Notifications">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;min-width:16px;height:16px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;border-radius:8px;padding:0 4px;line-height:16px;text-align:center;"></span>
+                </a>
+                <?php $profile_url = ($user_role === 'business') ? '/pages/business/profile.php' : '/pages/profile.php'; ?>
+                <a href="<?= APP_URL . $profile_url ?>" class="btn btn-ghost btn-sm">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
                     </svg>

@@ -47,14 +47,24 @@ function hours_until(string $deadline): int {
 }
 
 /**
- * Get a user-friendly countdown string.
+ * Get a user-friendly countdown string. Always uses the SMALLEST applicable unit
+ * (so 12h shows "12h left", not "1 day"; 90 min shows "1h 30m left").
  */
 function countdown_label(string $deadline): string {
     $diff = strtotime($deadline) - time();
     if ($diff <= 0) return 'Expired';
-    if ($diff < 3600)  return ceil($diff / 60) . ' min left';
-    if ($diff < 86400) return ceil($diff / 3600) . ' hours left';
-    return ceil($diff / 86400) . ' days left';
+    if ($diff < 3600) {
+        $m = (int)floor($diff / 60);
+        return $m . ' min left';
+    }
+    if ($diff < 86400) {
+        $h = (int)floor($diff / 3600);
+        $m = (int)floor(($diff % 3600) / 60);
+        return $m > 0 && $h < 6 ? "{$h}h {$m}m left" : "{$h}h left";
+    }
+    $d = (int)floor($diff / 86400);
+    $h = (int)floor(($diff % 86400) / 3600);
+    return $h > 0 && $d < 3 ? "{$d}d {$h}h left" : ($d === 1 ? '1 day left' : "{$d} days left");
 }
 
 /**
@@ -107,13 +117,17 @@ function require_auth(): int {
 }
 
 /**
- * Geocode a city name to lat/lng via Google Maps Geocoding API.
- * Returns ['lat' => float, 'lng' => float] or null on failure.
+ * Geocode a free-text address (or city) to lat/lng via Nominatim.
+ * Pass a full address like "Dizengoff 13, Tel Aviv" for street-level precision,
+ * or just a city name for city-level precision.
+ * Returns ['lat' => float, 'lng' => float, 'display' => string] or null on failure.
  */
-function geocode_city(string $city): ?array {
-    $query = urlencode($city . ', Israel');
-    $url   = "https://nominatim.openstreetmap.org/search?q={$query}&format=json&limit=1";
-    $ctx   = stream_context_create(['http' => [
+function geocode_address(string $query): ?array {
+    $query = trim($query);
+    if ($query === '') return null;
+    $q   = urlencode($query . ', Israel');
+    $url = "https://nominatim.openstreetmap.org/search?q={$q}&format=json&limit=1&addressdetails=1&countrycodes=il";
+    $ctx = stream_context_create(['http' => [
         'header'  => "User-Agent: SmartCart/1.0 (academic project)\r\n",
         'timeout' => 5,
     ]]);
@@ -121,5 +135,18 @@ function geocode_city(string $city): ?array {
     if (!$resp) return null;
     $data = json_decode($resp, true);
     if (empty($data[0])) return null;
-    return ['lat' => (float)$data[0]['lat'], 'lng' => (float)$data[0]['lon']];
+    return [
+        'lat'     => (float)$data[0]['lat'],
+        'lng'     => (float)$data[0]['lon'],
+        'display' => $data[0]['display_name'] ?? $query,
+    ];
+}
+
+/**
+ * Back-compat alias: city-level geocode.
+ */
+function geocode_city(string $city): ?array {
+    $r = geocode_address($city);
+    if (!$r) return null;
+    return ['lat' => $r['lat'], 'lng' => $r['lng']];
 }

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/lang.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 
 $page_title = $t['agent_title'];
+$needs_map  = true;
 
 require_login();
 $user_id = current_user_id();
@@ -60,6 +61,28 @@ include __DIR__ . '/../includes/header.php';
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg>
             Find Groups For Me
         </button>
+        <button id="use-location" class="btn btn-outline" type="button" title="Use my current location" style="display:flex;align-items:center;gap:6px;">
+            📍 <span>Use my location</span>
+        </button>
+        <div style="margin-left:auto;display:inline-flex;background:var(--gray-100);border-radius:10px;padding:4px;">
+            <button type="button" id="view-list" class="btn btn-sm" style="padding:6px 14px;background:var(--primary);color:#fff;border-radius:8px;">📋 List</button>
+            <button type="button" id="view-map"  class="btn btn-sm" style="padding:6px 14px;background:transparent;color:var(--gray-500);border-radius:8px;">🗺️ Map</button>
+        </div>
+    </div>
+
+    <!-- Live location banner -->
+    <div id="live-loc-banner" style="display:none;background:#dbeafe;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1e40af;">
+        <strong>📍 Using your live location</strong> — recommendations are sorted by distance from where you are right now.
+    </div>
+
+    <!-- Map container (hidden by default) -->
+    <div id="agent-map-wrap" style="display:none;margin-bottom:24px;">
+        <div id="agent-map" style="height:520px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);box-shadow:var(--shadow);"></div>
+        <p style="font-size:12px;color:var(--gray-500);margin-top:8px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563eb;vertical-align:middle;margin-right:4px;"></span> You
+            &nbsp;&nbsp;
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--primary);vertical-align:middle;margin-right:4px;"></span> Open deals
+        </p>
     </div>
 
     <!-- How scoring works -->
@@ -139,12 +162,16 @@ function renderAgentResults(results) {
         <div class="card">
             ${r.product_image ? `<img src="${APP_URL_JS}${r.product_image}" alt="${r.product_name}" style="width:100%;height:180px;object-fit:cover;">` : ''}
             <div class="card-body">
-                <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                     <span class="card-badge badge-joined">#${i+1} <?= $t['agent_rank'] ?></span>
-                    <span style="font-size:13px;font-weight:700;color:var(--purple);">${r.score}/100</span>
+                    <span style="font-size:11px;color:var(--gray-500);font-weight:500;">Match <strong style="color:var(--primary);">${r.score}</strong>/100</span>
                 </div>
-                <div style="height:6px;background:var(--gray-300);border-radius:999px;margin-bottom:12px;overflow:hidden;">
-                    <div style="height:100%;width:${r.score}%;background:linear-gradient(90deg,var(--purple),var(--green));border-radius:999px;"></div>
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+                    <span style="font-size:10px;color:var(--gray-400);min-width:38px;">FILL</span>
+                    <div style="flex:1;height:6px;background:var(--gray-200);border-radius:999px;overflow:hidden;">
+                        <div style="height:100%;width:${r.fill_percent}%;background:${r.fill_percent >= 80 ? 'var(--green)' : (r.fill_percent >= 50 ? 'var(--orange)' : 'var(--primary)')};border-radius:999px;transition:width .3s;"></div>
+                    </div>
+                    <span style="font-size:11px;color:var(--gray-600);font-weight:600;min-width:42px;text-align:right;">${r.current_participants}/${r.target_participants}</span>
                 </div>
                 <h3 style="font-size:15px;font-weight:600;margin-bottom:4px;">${r.product_name}</h3>
                 <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px;">${r.business_name} · ${r.city || ''}</p>
@@ -153,7 +180,7 @@ function renderAgentResults(results) {
                     <span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg> ${r.discount_percent}% off</span>
                     <span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg> ${r.fill_percent}% full</span>
                     ${r.distance_km !== null ? `<span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> ${r.distance_km < 1 ? '<1' : r.distance_km}km</span>` : ''}
-                    <span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${r.days_left}d left</span>
+                    <span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${r.countdown}</span>
                 </div>
                 <details style="margin-bottom:12px;">
                     <summary style="font-size:12px;cursor:pointer;color:var(--gray-500);"><?= $t['agent_why'] ?></summary>
@@ -179,6 +206,82 @@ function renderAgentResults(results) {
     </div>`;
 }
 
+// Live geolocation (from "Use my location" button) — overrides saved profile coords
+let liveLocation = null;
+let lastResults  = [];
+
+document.getElementById('use-location').addEventListener('click', async function() {
+    const btn = this;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '📍 <span>Locating…</span>';
+    btn.disabled = true;
+    try {
+        liveLocation = await SmartCartMaps.getCurrentLocation();
+        document.getElementById('live-loc-banner').style.display = 'block';
+        btn.innerHTML = '✓ <span>Location set</span>';
+        // Re-run with live coords
+        document.getElementById('run-agent').click();
+    } catch (err) {
+        if (typeof SmartCart !== 'undefined') SmartCart.showToast(err.message, 'error');
+        btn.innerHTML = orig;
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+// View toggle
+let agentMap = null;
+let agentMarkers = [];
+function showList() {
+    document.getElementById('agent-results').style.display = 'block';
+    document.getElementById('agent-map-wrap').style.display = 'none';
+    document.getElementById('view-list').style.cssText = 'padding:6px 14px;background:var(--primary);color:#fff;border-radius:8px;';
+    document.getElementById('view-map').style.cssText  = 'padding:6px 14px;background:transparent;color:var(--gray-500);border-radius:8px;';
+}
+function showMap() {
+    document.getElementById('agent-results').style.display = 'none';
+    document.getElementById('agent-map-wrap').style.display = 'block';
+    document.getElementById('view-map').style.cssText  = 'padding:6px 14px;background:var(--primary);color:#fff;border-radius:8px;';
+    document.getElementById('view-list').style.cssText = 'padding:6px 14px;background:transparent;color:var(--gray-500);border-radius:8px;';
+    renderAgentMap(lastResults);
+}
+document.getElementById('view-list').addEventListener('click', showList);
+document.getElementById('view-map').addEventListener('click', showMap);
+
+function renderAgentMap(results) {
+    const withCoords = results.filter(r => r.lat && r.lng);
+    if (!withCoords.length && !liveLocation) {
+        document.getElementById('agent-map-wrap').innerHTML =
+            '<div class="empty-state" style="padding:60px 20px;"><h3>No deals with location data</h3></div>';
+        return;
+    }
+    // Re-init map fresh each render
+    if (agentMap) { agentMap.remove(); agentMap = null; }
+    const center = liveLocation || (withCoords[0] ? { lat: withCoords[0].lat, lng: withCoords[0].lng } : SmartCartMaps.ISRAEL_CENTER);
+    agentMap = SmartCartMaps.createMap('agent-map', center.lat, center.lng, liveLocation ? 13 : 11);
+    if (!agentMap) return;
+
+    agentMarkers = [];
+    if (liveLocation) {
+        SmartCartMaps.addMyLocationMarker(agentMap, liveLocation.lat, liveLocation.lng);
+    }
+    withCoords.forEach((r, i) => {
+        const distLine = r.distance_km !== null ? ('<br><span style="color:#6b7280;font-size:11px">📍 ' + (r.distance_km < 1 ? '<1' : r.distance_km) + 'km away</span>') : '';
+        const popup =
+            '<div style="font-family:Inter,sans-serif;min-width:200px">' +
+            '<div style="font-size:11px;color:#6f52ff;font-weight:700">#' + (i+1) + ' rank · ' + r.score + '/100</div>' +
+            '<strong style="display:block;margin-top:2px">' + r.product_name + '</strong>' +
+            '<div style="font-size:12px;color:#6b7280">' + r.business_name + (r.address ? '<br>' + r.address : '') + '</div>' +
+            '<div style="font-size:16px;font-weight:800;color:var(--primary);margin:6px 0">₪' + r.group_price_ils.toLocaleString() + '</div>' +
+            '<div style="font-size:11px;color:#6b7280">' + r.discount_percent + '% off · ' + r.fill_percent + '% full · ' + r.days_left + 'd left</div>' +
+            distLine +
+            '<a href="' + APP_URL_JS + '/pages/group.php?id=' + r.group_id + '" style="display:inline-block;margin-top:8px;color:var(--primary);font-weight:600;font-size:12px">View Group →</a>' +
+            '</div>';
+        agentMarkers.push(SmartCartMaps.addMarker(agentMap, r.lat, r.lng, popup));
+    });
+    if (agentMarkers.length) SmartCartMaps.fitBounds(agentMap, agentMarkers);
+}
+
 document.getElementById('run-agent').addEventListener('click', async function() {
     const dist    = document.getElementById('dist-filter').value;
     const results = document.getElementById('agent-results');
@@ -187,13 +290,24 @@ document.getElementById('run-agent').addEventListener('click', async function() 
     btn.textContent = '<?= $t['loading'] ?>';
     results.innerHTML = '<p class="text-muted text-center" style="padding:40px;"><?= $t['loading'] ?></p>';
 
-    const params = new URLSearchParams({ user_id: AGENT_USER_ID, limit: 10 });
+    const cat    = document.getElementById('cat-filter').value;
+    const params = new URLSearchParams({ user_id: AGENT_USER_ID, limit: 20 });
     if (dist) params.append('max_distance_km', dist);
+    if (cat)  params.append('category', cat);
+    if (liveLocation) {
+        params.append('live_lat', liveLocation.lat);
+        params.append('live_lng', liveLocation.lng);
+    }
 
     try {
         const res  = await fetch(`${APP_URL_JS}/api/agent.php?${params}`);
         const data = await res.json();
-        renderAgentResults(Array.isArray(data) ? data : []);
+        lastResults = Array.isArray(data) ? data : [];
+        renderAgentResults(lastResults);
+        // If map view is currently active, refresh it
+        if (document.getElementById('agent-map-wrap').style.display === 'block') {
+            renderAgentMap(lastResults);
+        }
     } catch(e) {
         results.innerHTML = '<p class="text-danger text-center" style="padding:40px;">Error loading recommendations. Please try again.</p>';
     } finally {

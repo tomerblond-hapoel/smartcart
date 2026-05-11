@@ -1,13 +1,26 @@
 Options -Indexes
 RewriteEngine On
 
+# Force HTTPS in production (only triggers if a real domain is present; localhost stays http)
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP_HOST} !^localhost [NC]
+RewriteCond %{HTTP_HOST} !^127\.0\.0\.1
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
 # Route / to homepage
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^$ pages/index.php [L]
 
-# Deny access to config files (Apache 2.4 syntax)
+# Deny access to sensitive paths
+RewriteRule ^(config|sql|cron|docs|logs)/ - [F,L]
+RewriteRule ^\.git - [F,L]
+
+# Deny access to specific files
 <FilesMatch "^config\.php$">
+    Require all denied
+</FilesMatch>
+<FilesMatch "\.(env|log|sql)$">
     Require all denied
 </FilesMatch>
 

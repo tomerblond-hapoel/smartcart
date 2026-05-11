@@ -11,13 +11,14 @@ $pdo = getPDO();
 
 $category = trim($_GET['category'] ?? '');
 $city     = trim($_GET['city']     ?? '');
+$search   = trim($_GET['search']   ?? '');
 $sort     = trim($_GET['sort']     ?? 'newest');
 $page     = max(1, (int)($_GET['page'] ?? 1));
 $per_page = 20;
 $offset   = ($page - 1) * $per_page;
 
 $categories = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
-$cat_icons  = ['electronics'=>'','home'=>'','fashion'=>'','food'=>'','sports'=>'','beauty'=>'','toys'=>'','books'=>'','automotive'=>'','other'=>''];
+$cat_icons  = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
 
 // Build query
 $where  = ['p.status = ?'];
@@ -27,9 +28,26 @@ if ($category && in_array($category, $categories)) {
     $params[] = $category;
 }
 if ($city) {
-    $where[]  = '(p.city LIKE ? OR b.city LIKE ?)';
-    $params[] = "%$city%";
-    $params[] = "%$city%";
+    // Fuzzy: "Tel Aviv" must match "Dizengoff 13, Tel Aviv"; "Tel Aviv-Yafo" must match "Tel Aviv".
+    // Strip suffixes after dash/comma and require any token (≥2 chars) to match.
+    $clean = trim(preg_replace('/[-,].*$/u', '', $city));
+    $tokens = preg_split('/\s+/u', $clean, -1, PREG_SPLIT_NO_EMPTY);
+    $tokens = array_filter($tokens, fn($t) => mb_strlen($t) >= 2);
+    if (!$tokens) $tokens = [$city];
+    $parts = [];
+    foreach ($tokens as $tok) {
+        $parts[] = '(p.city LIKE ? OR b.city LIKE ? OR b.address LIKE ?)';
+        $params[] = "%$tok%"; $params[] = "%$tok%"; $params[] = "%$tok%";
+    }
+    $where[] = '(' . implode(' OR ', $parts) . ')';
+}
+if ($search) {
+    $where[]  = '(p.name LIKE ? OR p.description LIKE ? OR b.business_name LIKE ? OR b.address LIKE ? OR b.city LIKE ?)';
+    $params[] = "%$search%";
+    $params[] = "%$search%";
+    $params[] = "%$search%";
+    $params[] = "%$search%";
+    $params[] = "%$search%";
 }
 
 if ($sort === 'discount') {
@@ -73,6 +91,12 @@ include __DIR__ . '/../includes/header.php';
 
     <!-- Filter Bar -->
     <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;background:white;padding:16px;border-radius:var(--radius);box-shadow:var(--shadow);">
+        <div style="flex:2;min-width:200px;">
+            <label class="form-label">Search</label>
+            <input type="text" name="search" class="form-control"
+                   value="<?= htmlspecialchars($search) ?>"
+                   placeholder="Search products, businesses...">
+        </div>
         <div style="flex:1;min-width:140px;">
             <label class="form-label"><?= $t['filter_category'] ?></label>
             <select name="category" class="form-control" onchange="this.form.submit()">
@@ -88,8 +112,11 @@ include __DIR__ . '/../includes/header.php';
             <label class="form-label"><?= $t['filter_city'] ?></label>
             <input type="text" id="browse-city" name="city" class="form-control"
                    value="<?= htmlspecialchars($city) ?>"
-                   placeholder="Tel Aviv, Haifa..."
+                   placeholder="City or street..."
                    autocomplete="off">
+            <button type="button" id="use-my-location" class="btn btn-ghost btn-sm" style="margin-top:6px;padding:4px 10px;font-size:11px;">
+                📍 Use my location
+            </button>
         </div>
         <div style="flex:1;min-width:140px;">
             <label class="form-label"><?= $t['filter_sort'] ?></label>
@@ -195,4 +222,39 @@ include __DIR__ . '/../includes/header.php';
 if (typeof SmartCartMaps !== 'undefined') {
     SmartCartMaps.initCityAutocomplete('browse-city', null, null);
 }
+
+// "Use my location" — reverse-geocode to fill the city input
+document.getElementById('use-my-location').addEventListener('click', async function() {
+    const btn   = this;
+    const cityIn = document.getElementById('browse-city');
+    const orig  = btn.textContent;
+    btn.textContent = '📍 Locating…';
+    btn.disabled = true;
+    try {
+        const loc = await SmartCartMaps.getCurrentLocation();
+        // Reverse-geocode via Nominatim
+        const res = await fetch('https://nominatim.openstreetmap.org/reverse?lat=' + loc.lat +
+            '&lon=' + loc.lng + '&format=json&zoom=14&accept-language=en', {
+            headers: { 'Accept': 'application/json' },
+        });
+        const data = await res.json();
+        const addr = data.address || {};
+        let city = addr.city || addr.town || addr.village || addr.suburb || addr.county || '';
+        // Strip common OSM suffixes so DB fuzzy match works: "Tel Aviv-Yafo" → "Tel Aviv"
+        city = city.replace(/[-,].*$/, '').trim();
+        if (city) {
+            cityIn.value = city;
+            btn.textContent = '✓ ' + city;
+            setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+            // Auto-submit to refresh results
+            cityIn.form.submit();
+        } else {
+            throw new Error('Could not determine city');
+        }
+    } catch (err) {
+        if (typeof SmartCart !== 'undefined') SmartCart.showToast(err.message, 'error');
+        btn.textContent = orig;
+        btn.disabled = false;
+    }
+});
 </script>

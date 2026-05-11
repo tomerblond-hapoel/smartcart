@@ -8,6 +8,10 @@ if (is_logged_in()) {
     exit;
 }
 
+$preselected_role = $_GET['role'] ?? null;
+if (!in_array($preselected_role, ['customer','business'], true)) $preselected_role = null;
+$force_theme = $preselected_role === 'business' ? 'business' : 'customer';
+
 $page_title = $t['register_title'];
 $needs_map  = true;
 include __DIR__ . '/../includes/header.php';
@@ -23,7 +27,21 @@ include __DIR__ . '/../includes/header.php';
 
             <div id="error-msg" class="flash flash-error" style="border-radius:8px;margin-bottom:20px;display:none;"></div>
 
-            <!-- Step 1: Role Selection -->
+            <?php if ($preselected_role): ?>
+            <!-- Role-locked banner with switch link -->
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--primary-50);border-radius:10px;margin-bottom:20px;">
+                <div style="font-size:22px;"><?= $preselected_role === 'business' ? '🏪' : '🛍️' ?></div>
+                <div style="flex:1;">
+                    <div style="font-weight:600;font-size:14px;color:var(--accent-text);">
+                        <?= $preselected_role === 'business' ? ($t['register_business'] ?? 'Business') : ($t['register_customer'] ?? 'Customer') ?>
+                    </div>
+                    <a href="register.php?role=<?= $preselected_role === 'business' ? 'customer' : 'business' ?>" style="font-size:12px;color:var(--primary);font-weight:600;">
+                        <?= $preselected_role === 'business' ? '→ Register as Customer instead' : '→ Register as Business instead' ?>
+                    </a>
+                </div>
+            </div>
+            <?php else: ?>
+            <!-- Step 1: Role Selection (only shown when no ?role= preset) -->
             <div id="step-1">
                 <p style="font-weight:600;margin-bottom:16px;text-align:center;"><?= $t['register_choose_role'] ?></p>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
@@ -37,10 +55,11 @@ include __DIR__ . '/../includes/header.php';
                     </button>
                 </div>
             </div>
+            <?php endif; ?>
 
-            <!-- Step 2: Registration Form (hidden until role selected) -->
-            <form id="register-form" style="display:none;">
-                <input type="hidden" id="role-input" name="role" value="customer">
+            <!-- Step 2: Registration Form (visible by default if role preselected) -->
+            <form id="register-form" style="display:<?= $preselected_role ? 'block' : 'none' ?>;">
+                <input type="hidden" id="role-input" name="role" value="<?= htmlspecialchars($preselected_role ?? 'customer') ?>">
 
                 <div class="form-group">
                     <label class="form-label" for="full_name"><?= $t['register_name'] ?></label>
@@ -76,7 +95,7 @@ include __DIR__ . '/../includes/header.php';
                 </div>
 
                 <!-- Business-only fields -->
-                <div id="business-fields" style="display:none;">
+                <div id="business-fields" style="display:<?= $preselected_role === 'business' ? 'block' : 'none' ?>;">
                     <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
                     <p style="font-size:13px;color:var(--gray-500);margin-bottom:12px;">Business Details</p>
                     <div class="form-group">
@@ -105,9 +124,11 @@ include __DIR__ . '/../includes/header.php';
                     <?= $t['register_btn'] ?>
                 </button>
 
+                <?php if (!$preselected_role): ?>
                 <button type="button" id="back-btn" class="btn btn-ghost btn-full" style="margin-top:8px;">
                     ← Back
                 </button>
+                <?php endif; ?>
             </form>
 
             <p style="text-align:center;margin-top:20px;font-size:14px;color:var(--gray-500);">
@@ -125,23 +146,35 @@ const step1 = document.getElementById('step-1');
 const form  = document.getElementById('register-form');
 const errEl = document.getElementById('error-msg');
 
-document.querySelectorAll('.role-card').forEach(card => {
-    card.addEventListener('click', function() {
-        const role = this.dataset.role;
-        document.getElementById('role-input').value = role;
-        step1.style.display = 'none';
-        form.style.display  = 'block';
-        document.getElementById('business-fields').style.display = role === 'business' ? 'block' : 'none';
-        document.getElementById('business_name').required = role === 'business';
+if (step1) {
+    document.querySelectorAll('.role-card').forEach(card => {
+        card.addEventListener('click', function() {
+            const role = this.dataset.role;
+            document.getElementById('role-input').value = role;
+            step1.style.display = 'none';
+            form.style.display  = 'block';
+            document.getElementById('business-fields').style.display = role === 'business' ? 'block' : 'none';
+            document.getElementById('business_name').required = role === 'business';
+            document.body.classList.remove('theme-customer','theme-business');
+            document.body.classList.add('theme-' + role);
+        });
+        card.addEventListener('mouseenter', () => { card.style.borderColor = 'var(--primary)'; card.style.background = 'var(--primary-50)'; });
+        card.addEventListener('mouseleave', () => { card.style.borderColor = 'var(--border)'; card.style.background = 'white'; });
     });
-    card.addEventListener('mouseenter', () => { card.style.borderColor = 'var(--teal)'; card.style.background = 'var(--teal-50)'; });
-    card.addEventListener('mouseleave', () => { card.style.borderColor = 'var(--border)'; card.style.background = 'white'; });
-});
+}
 
-document.getElementById('back-btn').addEventListener('click', () => {
-    form.style.display  = 'none';
-    step1.style.display = 'block';
-});
+const backBtn = document.getElementById('back-btn');
+if (backBtn) {
+    backBtn.addEventListener('click', () => {
+        form.style.display  = 'none';
+        step1.style.display = 'block';
+    });
+}
+
+// If role pre-selected via URL, ensure business_name is required server-side validation matches
+<?php if ($preselected_role === 'business'): ?>
+document.getElementById('business_name').required = true;
+<?php endif; ?>
 
 form.addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -168,7 +201,13 @@ form.addEventListener('submit', async function(e) {
         });
         const json = await res.json();
         if (res.ok) {
-            window.location.href = '<?= APP_URL ?>/pages/profile.php';
+            const role = (json.user && json.user.role) || data.role;
+            const dest = role === 'business'
+                ? '/pages/business/dashboard.php'
+                : role === 'admin'
+                ? '/pages/admin/dashboard.php'
+                : '/pages/index.php';
+            window.location.href = '<?= APP_URL ?>' + dest;
         } else {
             errEl.textContent = json.error || 'Registration failed.';
             errEl.style.display = 'flex';

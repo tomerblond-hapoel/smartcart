@@ -4,12 +4,25 @@
 
 require_once __DIR__ . '/config.php';
 
+// Harden session cookies before any session_start() in the request lifecycle.
+if (session_status() === PHP_SESSION_NONE) {
+    $secure = defined('APP_ENV') && APP_ENV === 'production';
+    @session_set_cookie_params([
+        'lifetime' => defined('SESSION_LIFETIME') ? SESSION_LIFETIME : 0,
+        'path'     => '/',
+        'secure'   => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+
 function getPDO(): PDO {
     static $pdo = null;
     if ($pdo !== null) {
         return $pdo;
     }
-    $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4';
+    $port = defined('DB_PORT') ? DB_PORT : '3306';
+    $dsn = 'mysql:host=' . DB_HOST . ';port=' . $port . ';dbname=' . DB_NAME . ';charset=utf8mb4';
     $options = [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,

@@ -9,6 +9,14 @@ $page_title = $t['nav_home'];
 $user_id    = current_user_id();
 $needs_map  = true;
 
+// Logged-in users go straight to their role's home — index.php is the marketing landing.
+if (current_user_role() === 'business') {
+    header('Location: ' . APP_URL . '/pages/business/dashboard.php'); exit;
+}
+if (current_user_role() === 'admin') {
+    header('Location: ' . APP_URL . '/pages/admin/dashboard.php'); exit;
+}
+
 $pdo = getPDO();
 
 // Featured groups (6 newest open)
@@ -48,6 +56,33 @@ $cat_stmt = $pdo->query("
 ");
 $cat_counts = $cat_stmt->fetchAll();
 
+// Last-minute deals (deadline within 24 hours)
+$urgent_stmt = $pdo->query("
+    SELECT gp.id, gp.target_participants, gp.current_participants, gp.deadline, gp.status,
+           p.name AS product_name, p.image_url, p.group_price_ils, p.price_ils, p.category,
+           ROUND((p.price_ils - p.group_price_ils) / p.price_ils * 100) AS disc,
+           ROUND(gp.current_participants / gp.target_participants * 100) AS fill_pct,
+           b.business_name,
+           TIMESTAMPDIFF(SECOND, NOW(), gp.deadline) AS secs_left
+    FROM group_purchases gp
+    JOIN products p ON p.id = gp.product_id AND p.status = 'active'
+    JOIN businesses b ON b.id = p.business_id
+    WHERE gp.status = 'open' AND gp.deadline > NOW() AND gp.deadline <= DATE_ADD(NOW(), INTERVAL 24 HOUR)
+    ORDER BY gp.deadline ASC
+    LIMIT 6
+");
+$urgent_groups = $urgent_stmt->fetchAll();
+
+// Real stats
+$stats_stmt = $pdo->query("SELECT COUNT(DISTINCT user_id) FROM group_members WHERE status IN ('joined','paid')");
+$active_buyers = (int)$stats_stmt->fetchColumn();
+
+$stats_stmt2 = $pdo->query("SELECT COUNT(*) FROM group_purchases WHERE status = 'closed'");
+$successful_deals = (int)$stats_stmt2->fetchColumn();
+
+$stats_stmt3 = $pdo->query("SELECT ROUND(AVG((p.price_ils - p.group_price_ils) / p.price_ils * 100)) FROM products p WHERE p.status = 'active' AND p.price_ils > 0");
+$avg_savings = (int)$stats_stmt3->fetchColumn();
+
 $categories = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
 $cat_icons  = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
 
@@ -78,10 +113,10 @@ include __DIR__ . '/../includes/header.php';
                     <li>Zero payment until group succeeds</li>
                     <li>Personalized recommendations</li>
                 </ul>
-                <a href="<?= APP_URL ?>/pages/register.php"><?= $t['home_cta_browse'] ?> →</a>
+                <a href="<?= APP_URL ?>/pages/register.php?role=customer"><?= $t['home_cta_browse'] ?> →</a>
             </article>
             <article class="choice-card business-card">
-                <div class="choice-icon green">
+                <div class="choice-icon orange">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                 </div>
                 <h3><?= $t['home_business_title'] ?? "I'm a Business" ?></h3>
@@ -91,7 +126,7 @@ include __DIR__ . '/../includes/header.php';
                     <li>Guaranteed bulk order volume</li>
                     <li>Full dashboard &amp; analytics</li>
                 </ul>
-                <a href="<?= APP_URL ?>/pages/register.php" class="green-link">Enter as Business →</a>
+                <a href="<?= APP_URL ?>/pages/register.php?role=business" class="green-link">Enter as Business →</a>
             </article>
         </div>
         <?php else: ?>
@@ -108,9 +143,9 @@ include __DIR__ . '/../includes/header.php';
 
 <!-- STATS ROW -->
 <div class="stats-row" style="background:var(--white);border-top:1px solid var(--border);">
-    <div class="stat-item"><strong>40%</strong><span>Average savings</span></div>
-    <div class="stat-item"><strong>12K+</strong><span>Active buyers</span></div>
-    <div class="stat-item"><strong>500+</strong><span>Successful deals</span></div>
+    <div class="stat-item"><strong><?= $avg_savings > 0 ? $avg_savings . '%' : '—' ?></strong><span>Average savings</span></div>
+    <div class="stat-item"><strong><?= $active_buyers > 0 ? number_format($active_buyers) . '+' : '—' ?></strong><span>Active buyers</span></div>
+    <div class="stat-item"><strong><?= $successful_deals > 0 ? $successful_deals . '+' : '—' ?></strong><span>Successful deals</span></div>
 </div>
 
 <!-- SMART AGENT WIDGET (if logged in) -->
@@ -160,6 +195,52 @@ include __DIR__ . '/../includes/header.php';
     </div>
 </section>
 
+<!-- LAST-MINUTE DEALS -->
+<?php if (!empty($urgent_groups)): ?>
+<section class="section" style="padding-bottom:0;">
+    <div class="container">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 class="section-title" style="margin-bottom:0;color:var(--danger);">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <?= $t['home_last_minute'] ?>
+            </h2>
+            <span id="global-countdown" style="font-size:13px;font-weight:700;color:var(--danger);font-variant-numeric:tabular-nums;"></span>
+        </div>
+        <div class="grid-products grid">
+            <?php foreach ($urgent_groups as $g):
+                $remaining = max(0, (int)$g['secs_left']);
+                $more_needed = max(0, (int)$g['target_participants'] - (int)$g['current_participants']);
+            ?>
+            <div class="urgent-card" style="background:#fff;border:2px solid var(--danger);border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(239,68,68,.2)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="window.location='<?= APP_URL ?>/pages/group.php?id=<?= $g['id'] ?>'">
+                <?php if ($g['image_url']): ?>
+                <div style="width:100%;height:160px;background:url('<?= APP_URL . htmlspecialchars($g['image_url']) ?>') center/cover no-repeat;position:relative;">
+                    <span style="position:absolute;top:8px;left:8px;font-size:11px;font-weight:700;color:#fff;background:var(--danger);padding:3px 10px;border-radius:999px;"><?= $g['disc'] ?>% OFF</span>
+                </div>
+                <?php else: ?>
+                <div style="width:100%;height:160px;background:#fff0f0;display:flex;align-items:center;justify-content:center;position:relative;">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--danger);opacity:.4"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span style="position:absolute;top:8px;left:8px;font-size:11px;font-weight:700;color:#fff;background:var(--danger);padding:3px 10px;border-radius:999px;"><?= $g['disc'] ?>% OFF</span>
+                </div>
+                <?php endif; ?>
+                <div style="padding:12px;">
+                    <h3 style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--gray-900);"><?= htmlspecialchars($g['product_name']) ?></h3>
+                    <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px;"><?= htmlspecialchars($g['business_name']) ?></p>
+                    <div style="font-size:18px;font-weight:800;color:var(--purple);margin-bottom:8px;"><?= format_ils($g['group_price_ils']) ?></div>
+                    <div style="font-size:12px;color:var(--gray-600);margin-bottom:6px;">
+                        <strong><?= $g['current_participants'] ?></strong> joining now
+                        <?php if ($more_needed > 0): ?>
+                        · <strong style="color:var(--danger);"><?= $more_needed ?> <?= $t['home_more_to_save'] ?></strong>
+                        <?php endif; ?>
+                    </div>
+                    <div class="countdown-timer" data-deadline="<?= $remaining ?>" style="font-size:13px;font-weight:700;color:var(--danger);font-variant-numeric:tabular-nums;"></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</section>
+<?php endif; ?>
+
 <!-- FEATURED GROUPS -->
 <section class="section">
     <div class="container">
@@ -207,8 +288,13 @@ include __DIR__ . '/../includes/header.php';
                         <div class="progress-bar <?= $fill_class ?>" style="width:<?= $fill ?>%;"></div>
                     </div>
                     <div class="progress-label">
+                        <?php $more = max(0, (int)$g['target_participants'] - (int)$g['current_participants']); ?>
                         <span><?= $g['current_participants'] ?>/<?= $g['target_participants'] ?> <?= $t['participants'] ?></span>
-                        <span><?= $fill ?>% <?= $t['group_full'] ?></span>
+                        <?php if ($more > 0): ?>
+                        <span style="color:var(--danger);font-weight:600;"><?= $more ?> <?= $t['home_more_to_save'] ?></span>
+                        <?php else: ?>
+                        <span style="color:var(--green);font-weight:600;">✓ Goal reached!</span>
+                        <?php endif; ?>
                     </div>
                     <div style="margin-top:10px;font-size:12px;color:<?= $days <= 3 ? 'var(--danger)' : 'var(--gray-500)' ?>;display:flex;align-items:center;gap:4px;">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -226,7 +312,10 @@ include __DIR__ . '/../includes/header.php';
 <?php if (!empty($map_groups)): ?>
 <section class="map-section">
     <div class="container">
-        <h2 class="section-title"><?= $t['home_map_title'] ?></h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <h2 class="section-title" style="margin-bottom:0;"><?= $t['home_map_title'] ?></h2>
+            <button id="map-locate-me" class="btn btn-outline btn-sm">📍 Find me on map</button>
+        </div>
         <div id="map-main"></div>
     </div>
 </section>
@@ -235,6 +324,30 @@ include __DIR__ . '/../includes/header.php';
 <?php include __DIR__ . '/../includes/footer.php'; ?>
 
 <script>
+// ── Live countdown timers ─────────────────────────────────
+(function() {
+    const timers = document.querySelectorAll('.countdown-timer[data-deadline]');
+    if (!timers.length) return;
+    const starts = Array.from(timers).map(el => ({
+        el: el,
+        secs: parseInt(el.dataset.deadline, 10)
+    }));
+    const tick = Date.now();
+    function fmt(s) {
+        if (s <= 0) return 'Expired';
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        return [h,m,sec].map(n => String(n).padStart(2,'0')).join(':');
+    }
+    function update() {
+        const elapsed = Math.floor((Date.now() - tick) / 1000);
+        starts.forEach(t => { t.el.textContent = fmt(Math.max(0, t.secs - elapsed)); });
+    }
+    update();
+    setInterval(update, 1000);
+})();
+
 // ── Smart Agent widget (only if logged in) ───────────────
 <?php if ($user_id): ?>
 (function() {
@@ -247,26 +360,49 @@ include __DIR__ . '/../includes/header.php';
 const mapGroups = <?= json_encode($map_groups, JSON_UNESCAPED_UNICODE) ?>;
 const appUrl    = '<?= APP_URL ?>';
 
+let mainMap = null;
+let mainMarkers = [];
 (function() {
     if (!mapGroups.length || typeof SmartCartMaps === 'undefined') return;
     var center = SmartCartMaps.ISRAEL_CENTER;
-    // Use first group's coords as center if available
     if (mapGroups[0].lat && mapGroups[0].lng) {
         center = { lat: parseFloat(mapGroups[0].lat), lng: parseFloat(mapGroups[0].lng) };
     }
-    var map     = SmartCartMaps.createMap('map-main', center.lat, center.lng, 8);
-    if (!map) return;
-    var markers = [];
+    mainMap = SmartCartMaps.createMap('map-main', center.lat, center.lng, 8);
+    if (!mainMap) return;
     mapGroups.forEach(function(g) {
         if (!g.lat || !g.lng) return;
         var popup = '<div style="font-family:Inter,sans-serif;padding:4px">'
             + '<strong>' + g.product_name + '</strong><br>'
-            + '<span style="color:#0D9488;font-weight:600">\u20AA' + parseFloat(g.group_price_ils).toLocaleString() + '</span><br>'
+            + '<span style="color:var(--primary);font-weight:600">\u20AA' + parseFloat(g.group_price_ils).toLocaleString() + '</span><br>'
             + '<span style="font-size:12px;color:#6B7280">' + g.current_participants + '/' + g.target_participants + ' members</span><br>'
-            + '<a href="' + appUrl + '/pages/group.php?id=' + g.id + '" style="color:#0D9488;font-size:12px">Join Group \u2192</a>'
+            + '<a href="' + appUrl + '/pages/group.php?id=' + g.id + '" style="color:var(--primary);font-size:12px">Join Group \u2192</a>'
             + '</div>';
-        markers.push(SmartCartMaps.addMarker(map, parseFloat(g.lat), parseFloat(g.lng), popup));
+        mainMarkers.push(SmartCartMaps.addMarker(mainMap, parseFloat(g.lat), parseFloat(g.lng), popup));
     });
-    SmartCartMaps.fitBounds(map, markers);
+    SmartCartMaps.fitBounds(mainMap, mainMarkers);
 })();
+
+// Find me button
+const locateBtn = document.getElementById('map-locate-me');
+if (locateBtn && typeof SmartCartMaps !== 'undefined') {
+    locateBtn.addEventListener('click', async function() {
+        const orig = this.textContent;
+        this.textContent = '\uD83D\uDCCD Locating\u2026';
+        this.disabled = true;
+        try {
+            const loc = await SmartCartMaps.getCurrentLocation();
+            if (mainMap) {
+                SmartCartMaps.addMyLocationMarker(mainMap, loc.lat, loc.lng);
+                mainMap.setView([loc.lat, loc.lng], 12);
+            }
+            this.textContent = '\u2713 Centered on you';
+            setTimeout(() => { this.textContent = orig; this.disabled = false; }, 1500);
+        } catch (err) {
+            if (typeof SmartCart !== 'undefined') SmartCart.showToast(err.message, 'error');
+            this.textContent = orig;
+            this.disabled = false;
+        }
+    });
+}
 </script>

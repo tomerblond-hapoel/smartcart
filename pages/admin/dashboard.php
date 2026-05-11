@@ -73,12 +73,17 @@ include __DIR__ . '/../../includes/header.php';
                         <td><span class="card-badge badge-joined"><?= $u['role'] ?></span></td>
                         <td><span style="color:<?= $u['is_active'] ? 'var(--success)' : 'var(--danger)' ?>;"><?= $u['is_active'] ? 'Active' : 'Disabled' ?></span></td>
                         <td style="font-size:12px;"><?= date('d/m/Y', strtotime($u['created_at'])) ?></td>
-                        <td>
-                            <select class="form-control" style="font-size:12px;padding:4px 8px;" onchange="updateUserRole(<?= $u['id'] ?>, this.value)">
+                        <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                            <select class="form-control" style="font-size:12px;padding:4px 8px;width:auto;" onchange="updateUserRole(<?= $u['id'] ?>, this.value)">
                                 <?php foreach (['customer','business','admin'] as $r): ?>
                                 <option value="<?= $r ?>" <?= $u['role']===$r?'selected':'' ?>><?= ucfirst($r) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <button class="btn btn-sm <?= $u['is_active'] ? 'btn-danger' : 'btn-outline' ?>"
+                                onclick="toggleUser(<?= $u['id'] ?>, <?= $u['is_active'] ? 'false' : 'true' ?>)"
+                                title="<?= $u['is_active'] ? 'Disable user' : 'Enable user' ?>">
+                                <?= $u['is_active'] ? 'Disable' : 'Enable' ?>
+                            </button>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -109,6 +114,8 @@ include __DIR__ . '/../../includes/header.php';
                             <a href="<?= APP_URL ?>/pages/group.php?id=<?= $g['id'] ?>" class="btn btn-sm btn-outline">View</a>
                             <?php if ($g['status'] === 'open'): ?>
                             <button class="btn btn-sm btn-danger" onclick="expireGroup(<?= $g['id'] ?>)">Fail</button>
+                            <?php elseif ($g['status'] === 'closed'): ?>
+                            <button class="btn btn-sm btn-danger" onclick="refundGroup(<?= $g['id'] ?>)">Refund</button>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -158,10 +165,37 @@ async function updateUserRole(userId, role) {
     }
 }
 async function expireGroup(groupId) {
-    if (!confirm('Mark this group as failed?')) return;
+    if (!confirm('Mark this group as failed and void all authorizations?')) return;
     try {
         await SmartCart.api(`<?= APP_URL ?>/api/admin.php?action=fail_group&id=${groupId}`, { method: 'POST', body: '{}' });
         SmartCart.showToast('Group marked as failed.');
+        setTimeout(() => location.reload(), 800);
+    } catch(err) {
+        SmartCart.showToast(err.message, 'error');
+    }
+}
+async function refundGroup(groupId) {
+    const reason = prompt('Refund reason (shown to customers):', 'Group cancelled by admin');
+    if (reason === null) return;
+    try {
+        const res = await SmartCart.api(`<?= APP_URL ?>/api/admin.php?action=refund_group&id=${groupId}`, {
+            method: 'POST', body: JSON.stringify({ reason }),
+        });
+        SmartCart.showToast(`Refunded ${res.refunded} payment(s).`);
+        if (res.failed > 0) SmartCart.showToast(`${res.failed} refund(s) failed — check logs.`, 'error');
+        setTimeout(() => location.reload(), 1200);
+    } catch(err) {
+        SmartCart.showToast(err.message, 'error');
+    }
+}
+async function toggleUser(userId, enable) {
+    const action = enable ? 'enable' : 'disable';
+    if (!confirm((enable ? 'Enable' : 'Disable') + ' this user?')) return;
+    try {
+        await SmartCart.api('<?= APP_URL ?>/api/admin.php?action=disable_user', {
+            method: 'POST', body: JSON.stringify({ user_id: userId, enable: enable }),
+        });
+        SmartCart.showToast('User ' + (enable ? 'enabled' : 'disabled') + '.');
         setTimeout(() => location.reload(), 800);
     } catch(err) {
         SmartCart.showToast(err.message, 'error');
