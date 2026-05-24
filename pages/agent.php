@@ -4,365 +4,760 @@ require_once __DIR__ . '/../includes/lang.php';
 require_once __DIR__ . '/../includes/auth_check.php';
 
 $page_title = $t['agent_title'];
-$needs_map  = true;
 
 require_login();
-$user_id = current_user_id();
-$user    = get_current_user_data();
-$has_prefs = !empty($user['preferred_categories']);
+$user_id           = current_user_id();
+$user              = get_current_user_data();
+$has_prefs         = !empty($user['preferred_categories']);
+$user_first_name   = htmlspecialchars(explode(' ', trim($_SESSION['user_name'] ?? 'there'))[0]);
 
 include __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="container" style="padding-top:32px;padding-bottom:60px;">
-    <div class="page-header">
-        <h1 style="display:flex;align-items:center;gap:10px;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--purple)"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/><path d="M5 3l.5 2 2 .5-2 .5-.5 2-.5-2-2-.5 2-.5.5-2z"/><path d="M19 16l.5 2 2 .5-2 .5-.5 2-.5-2-2-.5 2-.5.5-2z"/></svg>
-            <?= $t['agent_title'] ?>
-        </h1>
-        <p><?= $t['agent_subtitle'] ?></p>
-    </div>
+<style>
+/* ── Override main wrapper so the chat fills full height ── */
+main.main-content {
+    padding: 0 !important;
+    overflow: hidden !important;
+}
 
-    <?php if (!$has_prefs): ?>
-    <div style="background:var(--purple-50);border-radius:var(--radius);padding:24px;text-align:center;margin-bottom:24px;">
-        <div style="display:flex;justify-content:center;margin-bottom:12px;">
-            <div style="width:52px;height:52px;background:var(--purple-50);border-radius:12px;display:flex;align-items:center;justify-content:center;">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--purple)"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-            </div>
+/* ── Chat shell ─────────────────────────────────────────── */
+.sc-chat {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--nav-height, 64px));
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+/* ── Header strip ───────────────────────────────────────── */
+.sc-chat-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px 12px;
+    background: white;
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 0 var(--border);
+}
+.sc-chat-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    background: var(--primary-gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(var(--primary-rgb),.30);
+}
+.sc-chat-header-text h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.2;
+}
+.sc-chat-header-text p {
+    font-size: 12px;
+    color: var(--green);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.sc-chat-header-text p::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 2px rgba(26,199,133,.25);
+}
+
+/* ── Messages area ──────────────────────────────────────── */
+.sc-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    scroll-behavior: smooth;
+}
+.sc-messages::-webkit-scrollbar { width: 4px; }
+.sc-messages::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 4px; }
+
+/* ── Message rows ───────────────────────────────────────── */
+.sc-msg {
+    display: flex;
+    gap: 10px;
+    max-width: 100%;
+    animation: sc-in .28s cubic-bezier(.22,.61,.36,1) both;
+}
+.sc-msg + .sc-msg { margin-top: 8px; }
+.sc-msg.user { flex-direction: row-reverse; }
+.sc-msg.group-tail { margin-top: 2px !important; }
+
+@keyframes sc-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Avatars */
+.sc-av {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    margin-top: 2px;
+    align-self: flex-end;
+}
+.sc-msg.ai   .sc-av { background: var(--primary-gradient); box-shadow: 0 2px 6px rgba(var(--primary-rgb),.25); }
+.sc-msg.user .sc-av { background: var(--gray-200); color: var(--gray-600); font-size: 13px; }
+.sc-msg.group-tail .sc-av { visibility: hidden; }
+
+/* Bubble wrappers */
+.sc-bubble-wrap { max-width: min(75%, 560px); display: flex; flex-direction: column; gap: 6px; }
+.sc-msg.user .sc-bubble-wrap { align-items: flex-end; }
+
+/* AI bubble */
+.sc-bubble-ai {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 4px 18px 18px 18px;
+    padding: 12px 16px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--gray-900);
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+
+/* User bubble */
+.sc-bubble-user {
+    background: var(--primary-gradient);
+    color: white;
+    border-radius: 18px 4px 18px 18px;
+    padding: 11px 15px;
+    font-size: 14px;
+    line-height: 1.5;
+    display: inline-block;
+    box-shadow: 0 2px 8px rgba(var(--primary-rgb),.25);
+}
+
+/* Time label */
+.sc-time {
+    font-size: 10.5px;
+    color: var(--gray-400);
+    padding: 0 4px;
+    align-self: flex-end;
+}
+
+/* ── Typing indicator ────────────────────────────────────── */
+.sc-typing .sc-bubble-ai {
+    padding: 13px 18px;
+    display: inline-flex;
+    align-items: center;
+}
+.sc-typing-dots {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+.sc-typing-dots span {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--primary);
+    opacity: .35;
+    animation: sc-bounce 1.3s infinite ease-in-out;
+}
+.sc-typing-dots span:nth-child(2) { animation-delay: .18s; }
+.sc-typing-dots span:nth-child(3) { animation-delay: .36s; }
+@keyframes sc-bounce {
+    0%,60%,100% { transform: translateY(0);    opacity: .35; }
+    30%          { transform: translateY(-7px); opacity: 1;   }
+}
+
+/* ── Product cards inside chat ──────────────────────────── */
+.sc-cards {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 8px 0 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-top: 6px;
+    max-width: calc(min(75vw, 560px) + 20px);
+}
+.sc-cards::-webkit-scrollbar { display: none; }
+.sc-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    min-width: 185px;
+    max-width: 200px;
+    flex-shrink: 0;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    transition: transform .18s, box-shadow .18s;
+    display: flex;
+    flex-direction: column;
+}
+.sc-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.10); }
+.sc-card-img {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    display: block;
+}
+.sc-card-img-placeholder {
+    width: 100%;
+    height: 80px;
+    background: var(--primary-50);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+}
+.sc-card-body { padding: 10px 12px 12px; flex: 1; display: flex; flex-direction: column; }
+.sc-card-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--gray-900);
+    margin-bottom: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.sc-card-biz { font-size: 11px; color: var(--gray-500); margin-bottom: 8px; }
+.sc-card-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-bottom: 7px;
+}
+.sc-card-price { font-size: 16px; font-weight: 800; color: var(--primary); }
+.sc-card-orig  { font-size: 11px; color: var(--gray-400); text-decoration: line-through; }
+.sc-card-badge {
+    background: #dcfce7;
+    color: #166534;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    margin-left: auto;
+    white-space: nowrap;
+}
+.sc-card-fill { margin-bottom: 8px; }
+.sc-card-fill-bar {
+    height: 3px;
+    background: var(--gray-200);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 3px;
+}
+.sc-card-fill-bar-inner { height: 100%; border-radius: 999px; }
+.sc-card-fill-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--gray-400);
+}
+.sc-card-btn {
+    display: block;
+    background: var(--primary-gradient);
+    color: white;
+    text-align: center;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-decoration: none;
+    margin-top: auto;
+    transition: opacity .15s;
+}
+.sc-card-btn:hover { opacity: .9; color: white; }
+
+/* ── Action chips (links under AI message) ───────────────── */
+.sc-actions {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.sc-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--primary-50);
+    color: var(--primary);
+    border: 1px solid var(--primary-light);
+    border-radius: 20px;
+    padding: 5px 13px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all .14s;
+}
+.sc-action:hover { background: var(--primary); color: white; border-color: var(--primary); }
+
+/* ── Input zone ─────────────────────────────────────────── */
+.sc-input-zone {
+    flex-shrink: 0;
+    padding: 10px 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+    background: linear-gradient(to top, var(--gray-50) 80%, transparent);
+}
+@media (max-width: 768px) {
+    .sc-input-zone { padding-bottom: 75px; }
+}
+
+/* Suggested prompts */
+.sc-prompts {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    transition: opacity .25s;
+}
+.sc-prompt {
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 13px;
+    font-size: 12.5px;
+    cursor: pointer;
+    color: var(--gray-700);
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    transition: all .15s;
+    font-family: var(--font);
+}
+.sc-prompt:hover {
+    background: var(--primary-50);
+    border-color: var(--primary);
+    color: var(--primary);
+    box-shadow: 0 1px 6px rgba(var(--primary-rgb),.15);
+}
+
+/* Input bar */
+.sc-input-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    padding: 10px 10px 10px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.08);
+    transition: border-color .2s, box-shadow .2s;
+}
+.sc-input-bar:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 4px 20px rgba(var(--primary-rgb),.12);
+}
+.sc-input-bar textarea {
+    flex: 1;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    max-height: 120px;
+    min-height: 22px;
+    color: var(--text);
+    background: transparent;
+}
+.sc-input-bar textarea::placeholder { color: var(--gray-400); }
+.sc-send {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: var(--primary-gradient);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(var(--primary-rgb),.30);
+    transition: transform .15s, box-shadow .15s, opacity .15s;
+}
+.sc-send:hover  { transform: scale(1.06); box-shadow: 0 4px 12px rgba(var(--primary-rgb),.35); }
+.sc-send:active { transform: scale(.94); }
+.sc-send:disabled { opacity: .45; cursor: not-allowed; transform: none !important; box-shadow: none; }
+.sc-send svg { color: white; display: block; }
+
+/* Input hint */
+.sc-input-hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--gray-400);
+    margin-top: 7px;
+}
+</style>
+
+<div class="sc-chat">
+
+    <!-- Header -->
+    <div class="sc-chat-header">
+        <div class="sc-chat-avatar">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/>
+                <path d="M5 3l.5 2 2 .5-2 .5-.5 2-.5-2-2-.5 2-.5.5-2z"/>
+                <path d="M19 16l.5 2 2 .5-2 .5-.5 2-.5-2-2-.5 2-.5.5-2z"/>
+            </svg>
         </div>
-        <h3 style="margin-bottom:8px;"><?= $t['agent_no_prefs'] ?></h3>
-        <a href="<?= APP_URL ?>/pages/profile.php" class="btn btn-primary mt-16"><?= $t['agent_go_profile'] ?></a>
+        <div class="sc-chat-header-text">
+            <h2>SmartCart AI Assistant</h2>
+            <p>Online — ready to help</p>
+        </div>
     </div>
-    <?php endif; ?>
 
-    <!-- AI Free-text Search Box -->
-    <div style="background:white;border-radius:var(--radius);padding:20px 24px;box-shadow:var(--shadow);margin-bottom:20px;border-left:4px solid var(--purple);">
-        <label for="agent-query" style="display:block;font-weight:600;font-size:14px;margin-bottom:10px;color:var(--gray-700);">
-            💬 <?= $t['agent_search_label'] ?>
-        </label>
-        <div style="display:flex;gap:10px;">
-            <input type="text" id="agent-query" class="form-control"
-                   placeholder="<?= htmlspecialchars($t['agent_search_placeholder']) ?>"
-                   style="flex:1;font-size:15px;" />
-            <button id="run-search" class="btn btn-primary" style="white-space:nowrap;display:flex;align-items:center;gap:6px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <?= $t['agent_search_btn'] ?>
+    <!-- Messages -->
+    <div class="sc-messages" id="sc-messages"></div>
+
+    <!-- Input zone -->
+    <div class="sc-input-zone">
+        <div class="sc-prompts" id="sc-prompts">
+            <button class="sc-prompt" data-prompt="Looking for JBL speakers">🎵 JBL speakers</button>
+            <button class="sc-prompt" data-prompt="Find me iPhone deals">📱 iPhone deals</button>
+            <button class="sc-prompt" data-prompt="Student laptop deals">💻 Student laptops</button>
+            <button class="sc-prompt" data-prompt="Best electronics discounts">⚡ Electronics</button>
+            <button class="sc-prompt" data-prompt="Show me all open groups">🛍️ All open groups</button>
+        </div>
+        <div class="sc-input-bar">
+            <textarea id="sc-input" rows="1"
+                      placeholder="Ask me anything — e.g. 'Find JBL speakers' or 'iPhone deals'…"></textarea>
+            <button class="sc-send" id="sc-send" title="Send message">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
             </button>
         </div>
-        <p style="font-size:12px;color:var(--gray-500);margin-top:8px;margin-bottom:0;"><?= $t['agent_search_hint'] ?></p>
-    </div>
-
-    <!-- Query result strip (shown after a text search) -->
-    <div id="query-strip" style="display:none;background:#ede9fe;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#5b21b6;">
-        <strong>🔍 <?= $t['agent_results_for'] ?>:</strong> <span id="query-strip-text"></span>
-    </div>
-
-    <!-- Filter Bar -->
-    <div style="background:white;border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:24px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
-        <div>
-            <label class="form-label"><?= $t['agent_filter_dist'] ?></label>
-            <select id="dist-filter" class="form-control" style="min-width:140px;">
-                <option value=""><?= $t['agent_dist_any'] ?></option>
-                <option value="10"><?= $t['agent_dist_10'] ?></option>
-                <option value="30" selected><?= $t['agent_dist_30'] ?></option>
-                <option value="50"><?= $t['agent_dist_50'] ?></option>
-            </select>
-        </div>
-        <div>
-            <label class="form-label"><?= $t['filter_category'] ?></label>
-            <select id="cat-filter" class="form-control" style="min-width:160px;">
-                <option value=""><?= $t['filter_all'] ?></option>
-                <?php
-                $categories = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
-                foreach ($categories as $cat): ?>
-                <option value="<?= $cat ?>"><?= $t['cat_'.$cat] ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <button id="run-agent" class="btn btn-primary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg>
-            Find Groups For Me
-        </button>
-        <button id="use-location" class="btn btn-outline" type="button" title="Use my current location" style="display:flex;align-items:center;gap:6px;">
-            📍 <span>Use my location</span>
-        </button>
-        <div style="margin-left:auto;display:inline-flex;background:var(--gray-100);border-radius:10px;padding:4px;">
-            <button type="button" id="view-list" class="btn btn-sm" style="padding:6px 14px;background:var(--primary);color:#fff;border-radius:8px;">📋 List</button>
-            <button type="button" id="view-map"  class="btn btn-sm" style="padding:6px 14px;background:transparent;color:var(--gray-500);border-radius:8px;">🗺️ Map</button>
-        </div>
-    </div>
-
-    <!-- Live location banner -->
-    <div id="live-loc-banner" style="display:none;background:#dbeafe;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1e40af;">
-        <strong>📍 Using your live location</strong> — recommendations are sorted by distance from where you are right now.
-    </div>
-
-    <!-- Map container (hidden by default) -->
-    <div id="agent-map-wrap" style="display:none;margin-bottom:24px;">
-        <div id="agent-map" style="height:520px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);box-shadow:var(--shadow);"></div>
-        <p style="font-size:12px;color:var(--gray-500);margin-top:8px;">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563eb;vertical-align:middle;margin-right:4px;"></span> You
-            &nbsp;&nbsp;
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--primary);vertical-align:middle;margin-right:4px;"></span> Open deals
-        </p>
-    </div>
-
-    <!-- How scoring works -->
-    <details style="background:white;border-radius:var(--radius);border:1px solid var(--border);padding:16px 20px;box-shadow:var(--shadow);margin-bottom:24px;font-size:13px;color:var(--gray-700);">
-        <summary style="cursor:pointer;font-weight:600;color:var(--purple);display:flex;align-items:center;gap:6px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            How does the Smart Agent score groups?
-        </summary>
-        <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">
-            <div class="scoring-card">
-                <div class="scoring-card-title">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-                    Category Match
-                </div>
-                <p>+30 pts if the product matches your preferred categories</p>
-            </div>
-            <div class="scoring-card">
-                <div class="scoring-card-title">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                    Location
-                </div>
-                <p>+25 pts if ≤10km · +15 pts if ≤30km</p>
-            </div>
-            <div class="scoring-card">
-                <div class="scoring-card-title">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
-                    Discount
-                </div>
-                <p>+20 pts if ≥30% off · +10 pts if ≥15% off</p>
-            </div>
-            <div class="scoring-card">
-                <div class="scoring-card-title">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    Group Fill
-                </div>
-                <p>+15 pts if ≥50% full · +7 pts if ≥25% full</p>
-            </div>
-            <div class="scoring-card">
-                <div class="scoring-card-title">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    Urgency
-                </div>
-                <p>+10 pts if ≤3 days left · +5 pts if ≤7 days</p>
-            </div>
-        </div>
-    </details>
-
-    <!-- Results container -->
-    <div id="agent-results">
-        <div class="empty-state">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-            </svg>
-            <h3>Click "Find Groups For Me" to get personalized recommendations</h3>
-        </div>
+        <p class="sc-input-hint">Press <kbd style="background:var(--gray-100);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:10px;">Enter</kbd> to send &nbsp;·&nbsp; <kbd style="background:var(--gray-100);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:10px;">Shift+Enter</kbd> for new line</p>
     </div>
 </div>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
 
 <script>
-const AGENT_USER_ID = <?= $user_id ?>;
-const APP_URL_JS    = '<?= APP_URL ?>';
-const HAS_PREFS     = <?= $has_prefs ? 'true' : 'false' ?>;
+/* ── Constants ─────────────────────────────────────────── */
+const SC_USER_ID  = <?= $user_id ?>;
+const SC_APP_URL  = '<?= APP_URL ?>';
+const SC_NAME     = '<?= addslashes($user_first_name) ?>';
+const SC_HAS_PREF = <?= $has_prefs ? 'true' : 'false' ?>;
 
-function renderAgentResults(results, meta) {
-    const container = document.getElementById('agent-results');
-    const qMode     = !!(meta && meta.query_mode);
-    const catLabel  = qMode ? '<?= $t['agent_relevance'] ?>' : '<?= $t['agent_cat_match'] ?>';
+/* ── Helpers ────────────────────────────────────────────── */
+function esc(s) {
+    return String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function md(t) {
+    return String(t)
+        .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g,'<em>$1</em>')
+        .replace(/\n/g,'<br>');
+}
+function catEmoji(c) {
+    return {electronics:'💻',home:'🏠',fashion:'👗',food:'🍎',sports:'⚽',beauty:'💄',toys:'🧸',books:'📚',automotive:'🚗'}[c] || '📦';
+}
+function nowTime() {
+    return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+function scrollEnd() {
+    const el = document.getElementById('sc-messages');
+    if (el) el.scrollTop = el.scrollHeight + 999;
+}
 
-    // Show/hide query strip
-    const strip = document.getElementById('query-strip');
-    if (qMode && meta.query_keywords && meta.query_keywords.length) {
-        strip.style.display = 'block';
-        document.getElementById('query-strip-text').textContent = meta.query_keywords.join(', ');
-    } else {
-        strip.style.display = 'none';
-    }
+/* ── Render a message row ───────────────────────────────── */
+function addMsg(role, html, opts = {}) {
+    const wrap = document.getElementById('sc-messages');
+    const row  = document.createElement('div');
+    row.className = 'sc-msg ' + role + (opts.tail ? ' group-tail' : '');
 
-    if (!results.length) {
-        container.innerHTML = `<div class="empty-state">
-            <h3><?= $t['agent_no_results'] ?></h3>
-            <a href="<?= APP_URL ?>/pages/profile.php" class="btn btn-outline mt-16">Update Preferences</a>
-        </div>`;
-        return;
-    }
-    container.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;">
-        ${results.map((r, i) => `
-        <div class="card">
-            ${r.product_image ? `<img src="${APP_URL_JS}${r.product_image}" alt="${r.product_name}" style="width:100%;height:180px;object-fit:cover;">` : ''}
-            <div class="card-body">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span class="card-badge badge-joined">#${i+1} <?= $t['agent_rank'] ?></span>
-                    <span style="font-size:11px;color:var(--gray-500);font-weight:500;">Match <strong style="color:var(--primary);">${r.score}</strong>/100</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
-                    <span style="font-size:10px;color:var(--gray-400);min-width:38px;">FILL</span>
-                    <div style="flex:1;height:6px;background:var(--gray-200);border-radius:999px;overflow:hidden;">
-                        <div style="height:100%;width:${r.fill_percent}%;background:${r.fill_percent >= 80 ? 'var(--green)' : (r.fill_percent >= 50 ? 'var(--orange)' : 'var(--primary)')};border-radius:999px;transition:width .3s;"></div>
-                    </div>
-                    <span style="font-size:11px;color:var(--gray-600);font-weight:600;min-width:42px;text-align:right;">${r.current_participants}/${r.target_participants}</span>
-                </div>
-                <h3 style="font-size:15px;font-weight:600;margin-bottom:4px;">${r.product_name}</h3>
-                <p style="font-size:12px;color:var(--gray-500);margin-bottom:8px;">${r.business_name} · ${r.city || ''}</p>
-                <div style="font-size:22px;font-weight:800;color:var(--purple);margin-bottom:10px;">₪${r.group_price_ils.toLocaleString()}</div>
-                <div style="display:flex;gap:10px;font-size:12px;color:var(--gray-500);margin-bottom:12px;flex-wrap:wrap;">
-                    <span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg> ${r.discount_percent}% off</span>
-                    <span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg> ${r.fill_percent}% full</span>
-                    ${r.distance_km !== null ? `<span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> ${r.distance_km < 1 ? '<1' : r.distance_km}km</span>` : ''}
-                    <span style="display:flex;align-items:center;gap:3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${r.countdown}</span>
-                </div>
-                <details style="margin-bottom:12px;">
-                    <summary style="font-size:12px;cursor:pointer;color:var(--gray-500);"><?= $t['agent_why'] ?></summary>
-                    <div style="margin-top:8px;padding:8px;background:var(--gray-100);border-radius:6px;">
-                        ${[
-                            {label: catLabel,                      pts: r.score_breakdown.category},
-                            {label:'<?= $t['agent_location'] ?>', pts: r.score_breakdown.location},
-                            {label:'<?= $t['agent_discount'] ?>', pts: r.score_breakdown.discount},
-                            {label:'<?= $t['agent_fill'] ?>',     pts: r.score_breakdown.fill},
-                            {label:'<?= $t['agent_urgency'] ?>',  pts: r.score_breakdown.urgency},
-                        ].map(it => `
-                            <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;">
-                                <span style="color:${it.pts > 0 ? 'var(--green)' : 'var(--gray-400)'};">
-                                    ${it.pts > 0 ? '✓' : '○'} ${it.label}
-                                </span>
-                                <span style="font-weight:600;color:${it.pts > 0 ? 'var(--green)' : 'var(--gray-300)'};">+${it.pts}pts</span>
-                            </div>`).join('')}
-                    </div>
-                </details>
-                <a href="${APP_URL_JS}/pages/group.php?id=${r.group_id}" class="btn btn-primary btn-full"><?= $t['agent_join'] ?></a>
+    const avHTML = role === 'ai'
+        ? `<div class="sc-av">✦</div>`
+        : `<div class="sc-av">👤</div>`;
+
+    const bubbleHTML = role === 'ai'
+        ? `<div class="sc-bubble-ai">${html}</div>`
+        : `<div class="sc-bubble-user">${esc(html)}</div>`;
+
+    row.innerHTML = avHTML
+        + `<div class="sc-bubble-wrap">${bubbleHTML}<span class="sc-time">${nowTime()}</span></div>`;
+
+    wrap.appendChild(row);
+    scrollEnd();
+    return row;
+}
+
+/* ── Typing indicator ───────────────────────────────────── */
+function showTyping() {
+    const wrap = document.getElementById('sc-messages');
+    const row  = document.createElement('div');
+    row.className = 'sc-msg ai sc-typing';
+    row.id = 'sc-typing';
+    row.innerHTML = `<div class="sc-av">✦</div>
+        <div class="sc-bubble-wrap">
+            <div class="sc-bubble-ai">
+                <div class="sc-typing-dots"><span></span><span></span><span></span></div>
             </div>
-        </div>`).join('')}
-    </div>`;
+        </div>`;
+    wrap.appendChild(row);
+    scrollEnd();
+}
+function hideTyping() {
+    const el = document.getElementById('sc-typing');
+    if (el) el.remove();
 }
 
-// Live geolocation (from "Use my location" button) — overrides saved profile coords
-let liveLocation = null;
-let lastResults  = [];
-let lastMeta     = null;
-
-document.getElementById('use-location').addEventListener('click', async function() {
-    const btn = this;
-    const orig = btn.innerHTML;
-    btn.innerHTML = '📍 <span>Locating…</span>';
-    btn.disabled = true;
-    try {
-        liveLocation = await SmartCartMaps.getCurrentLocation();
-        document.getElementById('live-loc-banner').style.display = 'block';
-        btn.innerHTML = '✓ <span>Location set</span>';
-        // Re-run with live coords
-        document.getElementById('run-agent').click();
-    } catch (err) {
-        if (typeof SmartCart !== 'undefined') SmartCart.showToast(err.message, 'error');
-        btn.innerHTML = orig;
-    } finally {
-        btn.disabled = false;
-    }
-});
-
-// View toggle
-let agentMap = null;
-let agentMarkers = [];
-function showList() {
-    document.getElementById('agent-results').style.display = 'block';
-    document.getElementById('agent-map-wrap').style.display = 'none';
-    document.getElementById('view-list').style.cssText = 'padding:6px 14px;background:var(--primary);color:#fff;border-radius:8px;';
-    document.getElementById('view-map').style.cssText  = 'padding:6px 14px;background:transparent;color:var(--gray-500);border-radius:8px;';
-}
-function showMap() {
-    document.getElementById('agent-results').style.display = 'none';
-    document.getElementById('agent-map-wrap').style.display = 'block';
-    document.getElementById('view-map').style.cssText  = 'padding:6px 14px;background:var(--primary);color:#fff;border-radius:8px;';
-    document.getElementById('view-list').style.cssText = 'padding:6px 14px;background:transparent;color:var(--gray-500);border-radius:8px;';
-    renderAgentMap(lastResults);
-}
-document.getElementById('view-list').addEventListener('click', showList);
-document.getElementById('view-map').addEventListener('click', showMap);
-
-function renderAgentMap(results) {
-    const withCoords = results.filter(r => r.lat && r.lng);
-    if (!withCoords.length && !liveLocation) {
-        document.getElementById('agent-map-wrap').innerHTML =
-            '<div class="empty-state" style="padding:60px 20px;"><h3>No deals with location data</h3></div>';
-        return;
-    }
-    // Re-init map fresh each render
-    if (agentMap) { agentMap.remove(); agentMap = null; }
-    const center = liveLocation || (withCoords[0] ? { lat: withCoords[0].lat, lng: withCoords[0].lng } : SmartCartMaps.ISRAEL_CENTER);
-    agentMap = SmartCartMaps.createMap('agent-map', center.lat, center.lng, liveLocation ? 13 : 11);
-    if (!agentMap) return;
-
-    agentMarkers = [];
-    if (liveLocation) {
-        SmartCartMaps.addMyLocationMarker(agentMap, liveLocation.lat, liveLocation.lng);
-    }
-    withCoords.forEach((r, i) => {
-        const distLine = r.distance_km !== null ? ('<br><span style="color:#6b7280;font-size:11px">📍 ' + (r.distance_km < 1 ? '<1' : r.distance_km) + 'km away</span>') : '';
-        const popup =
-            '<div style="font-family:Inter,sans-serif;min-width:200px">' +
-            '<div style="font-size:11px;color:#6f52ff;font-weight:700">#' + (i+1) + ' rank · ' + r.score + '/100</div>' +
-            '<strong style="display:block;margin-top:2px">' + r.product_name + '</strong>' +
-            '<div style="font-size:12px;color:#6b7280">' + r.business_name + (r.address ? '<br>' + r.address : '') + '</div>' +
-            '<div style="font-size:16px;font-weight:800;color:var(--primary);margin:6px 0">₪' + r.group_price_ils.toLocaleString() + '</div>' +
-            '<div style="font-size:11px;color:#6b7280">' + r.discount_percent + '% off · ' + r.fill_percent + '% full · ' + r.days_left + 'd left</div>' +
-            distLine +
-            '<a href="' + APP_URL_JS + '/pages/group.php?id=' + r.group_id + '" style="display:inline-block;margin-top:8px;color:var(--primary);font-weight:600;font-size:12px">View Group →</a>' +
-            '</div>';
-        agentMarkers.push(SmartCartMaps.addMarker(agentMap, r.lat, r.lng, popup));
-    });
-    if (agentMarkers.length) SmartCartMaps.fitBounds(agentMap, agentMarkers);
+/* ── Product cards ──────────────────────────────────────── */
+function renderCards(results) {
+    if (!results || !results.length) return '';
+    const items = results.slice(0, 5).map(r => {
+        const fillColor = r.fill_percent >= 75 ? 'var(--green)' : r.fill_percent >= 40 ? 'var(--orange)' : 'var(--primary)';
+        const img = r.product_image
+            ? `<img class="sc-card-img" src="${SC_APP_URL}${esc(r.product_image)}" alt="${esc(r.product_name)}" loading="lazy">`
+            : `<div class="sc-card-img-placeholder">${catEmoji(r.category)}</div>`;
+        return `
+        <div class="sc-card">
+            ${img}
+            <div class="sc-card-body">
+                <div class="sc-card-title">${esc(r.product_name)}</div>
+                <div class="sc-card-biz">${esc(r.business_name)}${r.city ? ' · ' + esc(r.city) : ''}</div>
+                <div class="sc-card-price-row">
+                    <span class="sc-card-price">₪${r.group_price_ils.toLocaleString()}</span>
+                    <span class="sc-card-orig">₪${r.price_ils.toLocaleString()}</span>
+                    <span class="sc-card-badge">-${r.discount_percent}%</span>
+                </div>
+                <div class="sc-card-fill">
+                    <div class="sc-card-fill-bar">
+                        <div class="sc-card-fill-bar-inner" style="width:${r.fill_percent}%;background:${fillColor};"></div>
+                    </div>
+                    <div class="sc-card-fill-meta">
+                        <span>${r.current_participants}/${r.target_participants} joined</span>
+                        <span>${r.countdown}</span>
+                    </div>
+                </div>
+                <a href="${SC_APP_URL}/pages/group.php?id=${r.group_id}" class="sc-card-btn">Join Group →</a>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="sc-cards">${items}</div>`;
 }
 
-document.getElementById('run-agent').addEventListener('click', async function() {
-    const dist    = document.getElementById('dist-filter').value;
-    const results = document.getElementById('agent-results');
-    const btn     = this;
-    btn.disabled = true;
-    btn.textContent = '<?= $t['loading'] ?>';
-    results.innerHTML = '<p class="text-muted text-center" style="padding:40px;"><?= $t['loading'] ?></p>';
+/* ── Natural language response builder ─────────────────── */
+function buildReply(meta, results, query) {
+    const kws  = (meta && meta.query_keywords) ? meta.query_keywords : [];
+    const cat  = meta ? meta.auto_category : null;
+    const qMode = meta ? meta.query_mode : false;
+    const qDisp = esc(query.trim());
 
-    const cat    = document.getElementById('cat-filter').value;
-    const query  = document.getElementById('agent-query').value.trim();
-    const params = new URLSearchParams({ user_id: AGENT_USER_ID, limit: 20 });
-    if (dist)  params.append('max_distance_km', dist);
-    if (cat)   params.append('category', cat);
-    if (query) params.append('query', query);
-    if (liveLocation) {
-        params.append('live_lat', liveLocation.lat);
-        params.append('live_lng', liveLocation.lng);
-    }
-
-    try {
-        const res  = await fetch(`${APP_URL_JS}/api/agent.php?${params}`);
-        const data = await res.json();
-        lastMeta    = Array.isArray(data) ? null : (data.meta    || null);
-        lastResults = Array.isArray(data) ? data  : (data.results || []);
-        renderAgentResults(lastResults, lastMeta);
-        if (document.getElementById('agent-map-wrap').style.display === 'block') {
-            renderAgentMap(lastResults);
+    /* ── Profile-based (no query) ── */
+    if (!qMode) {
+        if (!results.length) {
+            return {
+                text: `I checked all open groups based on your profile preferences, but nothing matches your interests right now. 😕<br><br>Try searching for a specific product above, or update your profile with more categories!`,
+                actions: [
+                    {label:'🛍️ Browse all groups', href: SC_APP_URL + '/pages/browse.php'},
+                    {label:'⚙️ Update my preferences', href: SC_APP_URL + '/pages/profile.php'},
+                ]
+            };
         }
-    } catch(e) {
-        results.innerHTML = '<p class="text-danger text-center" style="padding:40px;">Error loading recommendations. Please try again.</p>';
+        const n = results.length;
+        return {
+            text: `Based on your saved preferences, I found <strong>${n} open group${n>1?'s':''}</strong> worth joining. Here are my top picks — the more people join, the bigger the discount! 🎉`,
+        };
+    }
+
+    /* ── No results for query ── */
+    if (!results.length) {
+        return {
+            text: `I searched for <strong>"${qDisp}"</strong> but there are no open group purchases matching that right now. 😕<br><br>Here's what I suggest:<br>• Try a slightly different search term<br>• Browse all available groups to find something similar<br>• Come back later — new groups are added daily!`,
+            actions: [
+                {label:'🛍️ Browse all groups', href: SC_APP_URL + '/pages/browse.php'},
+            ]
+        };
+    }
+
+    const n   = results.length;
+    const top = results[0];
+    const has = (...ws) => ws.some(w => kws.includes(w));
+
+    /* ── Brand/category-aware intro ── */
+    let intro = '';
+    if (has('jbl','speaker','speakers','bluetooth','subwoofer'))
+        intro = `Found <strong>${n} audio deal${n>1?'s':''}</strong> for you! 🎵`;
+    else if (has('airpods','iphone','apple','ipad','macbook'))
+        intro = `Found <strong>${n} Apple group${n>1?'s':''}</strong>! 🍎`;
+    else if (has('samsung','galaxy'))
+        intro = `Here are <strong>${n} Samsung deal${n>1?'s':''}</strong>! 📱`;
+    else if (has('laptop','computer','pc','notebook'))
+        intro = `Found <strong>${n} computer deal${n>1?'s':''}</strong>! 💻`;
+    else if (has('headphone','headphones','earphone','earphones','earbuds','bose','sony'))
+        intro = `Found <strong>${n} headphone deal${n>1?'s':''}</strong>! 🎧`;
+    else if (cat === 'electronics')
+        intro = `Found <strong>${n} electronics group${n>1?'s':''}</strong> matching your search! 💡`;
+    else if (cat === 'fashion')
+        intro = `Found <strong>${n} fashion deal${n>1?'s':''}</strong>! 👗`;
+    else if (cat === 'home')
+        intro = `Found <strong>${n} home deal${n>1?'s':''}</strong>! 🏠`;
+    else if (cat === 'food')
+        intro = `Found <strong>${n} food deal${n>1?'s':''}</strong>! 🍽️`;
+    else if (cat === 'sports')
+        intro = `Found <strong>${n} sports deal${n>1?'s':''}</strong>! 🏃`;
+    else
+        intro = `I found <strong>${n} open group${n>1?'s':''}</strong> matching <strong>"${qDisp}"</strong>! 🎉`;
+
+    /* ── Best deal callout ── */
+    let detail = '';
+    if (top.discount_percent >= 30)
+        detail = ` Best deal: <strong>${top.discount_percent}% off</strong> on ${esc(top.product_name)} — saves you ₪${Math.round(top.price_ils - top.group_price_ils).toLocaleString()}!`;
+    else if (top.discount_percent >= 15)
+        detail = ` Top pick: <strong>${esc(top.product_name)}</strong> at <strong>${top.discount_percent}% off</strong>.`;
+
+    /* ── Urgency callout ── */
+    const urgent = results.filter(r => r.days_left <= 3);
+    let urgency = '';
+    if (urgent.length)
+        urgency = `<br><br>⚡ <strong>${urgent.length} group${urgent.length>1?' are':' is'} closing in under 3 days</strong> — act fast!`;
+
+    const actions = [];
+    if (n > 5) actions.push({label:`🔍 See all ${n} results`, href: SC_APP_URL + '/pages/browse.php'});
+
+    return { text: intro + detail + urgency, actions };
+}
+
+/* ── Send a message ─────────────────────────────────────── */
+let isBusy = false;
+
+async function send(text) {
+    text = text.trim();
+    if (!text || isBusy) return;
+    isBusy = true;
+
+    /* Hide prompts after first send */
+    const prompts = document.getElementById('sc-prompts');
+    if (prompts) { prompts.style.opacity = '0'; setTimeout(() => { prompts.style.display = 'none'; }, 250); }
+
+    /* User bubble */
+    addMsg('user', text);
+
+    /* Clear input */
+    const inp = document.getElementById('sc-input');
+    const btn = document.getElementById('sc-send');
+    inp.value = '';
+    inp.style.height = 'auto';
+    btn.disabled = true;
+
+    /* Typing */
+    await delay(280);
+    showTyping();
+
+    try {
+        const p = new URLSearchParams({ user_id: SC_USER_ID, limit: 10 });
+        if (text) p.append('query', text);
+        const res  = await fetch(`${SC_APP_URL}/api/agent.php?${p}`);
+        const data = await res.json();
+
+        const meta    = Array.isArray(data) ? null  : (data.meta    || null);
+        const results = Array.isArray(data) ? data  : (data.results || []);
+
+        await delay(550);
+        hideTyping();
+
+        const reply = buildReply(meta, results, text);
+        const cards = renderCards(results);
+
+        let html = reply.text;
+        if (cards) html += cards;
+
+        if (reply.actions && reply.actions.length) {
+            const chips = reply.actions.map(a =>
+                `<a href="${a.href}" class="sc-action">${a.label}</a>`
+            ).join('');
+            html += `<div class="sc-actions">${chips}</div>`;
+        }
+
+        addMsg('ai', html);
+
+    } catch (e) {
+        hideTyping();
+        addMsg('ai', 'Oops, something went wrong connecting to the server. Please try again! 🙁');
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Find Groups For Me';
+        isBusy = false;
+        inp.focus();
     }
-});
-
-// Search box — trigger same agent run with the typed query
-document.getElementById('run-search').addEventListener('click', function() {
-    document.getElementById('run-agent').click();
-});
-document.getElementById('agent-query').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') document.getElementById('run-agent').click();
-});
-
-// Auto-run on page load if user has prefs
-if (HAS_PREFS) {
-    document.getElementById('run-agent').click();
 }
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ── Input bar events ───────────────────────────────────── */
+const inp = document.getElementById('sc-input');
+const btn = document.getElementById('sc-send');
+
+inp.addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(this.value); }
+});
+btn.addEventListener('click', () => send(inp.value));
+
+document.querySelectorAll('.sc-prompt').forEach(el => {
+    el.addEventListener('click', () => send(el.dataset.prompt));
+});
+
+/* ── Welcome message on load ────────────────────────────── */
+(function init() {
+    const greet = SC_HAS_PREF
+        ? `Hi **${SC_NAME}**! 👋 I'm your **SmartCart AI Assistant**.\n\nI can find open group deals based on what you're looking for — or I can suggest deals based on your saved preferences.\n\nWhat are you shopping for today?`
+        : `Hi **${SC_NAME}**! 👋 I'm your **SmartCart AI Assistant**.\n\nI help you find group purchases so you can save money together. Just tell me what you're looking for — like *"JBL speaker"* or *"iPhone deals"* — and I'll search all open groups for you!\n\nTap a suggestion below or type your own request to get started.`;
+
+    addMsg('ai', md(greet));
+
+    /* Auto-load profile-based picks for users with preferences */
+    if (SC_HAS_PREF) {
+        delay(1300).then(async () => {
+            showTyping();
+            try {
+                const res  = await fetch(`${SC_APP_URL}/api/agent.php?user_id=${SC_USER_ID}&limit=10`);
+                const data = await res.json();
+                const meta    = Array.isArray(data) ? null  : (data.meta    || null);
+                const results = Array.isArray(data) ? data  : (data.results || []);
+                await delay(700);
+                hideTyping();
+                const reply = buildReply(meta, results, '');
+                const cards = renderCards(results);
+                let html = reply.text + (cards || '');
+                if (reply.actions && reply.actions.length) {
+                    const chips = reply.actions.map(a =>
+                        `<a href="${a.href}" class="sc-action">${a.label}</a>`
+                    ).join('');
+                    html += `<div class="sc-actions">${chips}</div>`;
+                }
+                addMsg('ai', html);
+            } catch(e) {
+                hideTyping();
+            }
+        });
+    }
+})();
 </script>
