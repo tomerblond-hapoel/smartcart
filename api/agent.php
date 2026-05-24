@@ -32,11 +32,18 @@ $filter_category = isset($_GET['category']) && $_GET['category'] !== '' ? $_GET[
 
 if ($query_mode) {
     $stop_words = ['i','am','looking','for','need','want','find','a','an','the','some',
-                   'any','give','show','me','buy','get','can','you','please','best',
+                   'any','give','show','see','me','buy','get','can','you','please','best',
                    'good','cheap','great','new','top','something','like','students','student',
-                   'is','are','was','be','do','does','have','has','will','would','could'];
+                   'is','are','was','be','do','does','have','has','will','would','could',
+                   'all','open','groups','group','deals','deal','products','product',
+                   'browse','available','current','today','here','list','search','now',
+                   'hi','hello','hey','please','want','recommend','suggest','help'];
     $words          = preg_split('/[\s,;.!?]+/', strtolower($query), -1, PREG_SPLIT_NO_EMPTY);
     $query_keywords = array_values(array_filter($words, fn($w) => strlen($w) >= 2 && !in_array($w, $stop_words)));
+    // If every word was a stop-word (e.g. "show me all open groups"), fall back to profile-based mode
+    if (empty($query_keywords)) {
+        $query_mode = false;
+    }
 
     $kw_cat_map = [
         'electronics' => ['speaker','speakers','headphone','headphones','earphone','earphones',
@@ -263,21 +270,65 @@ foreach ($groups as $g) {
     ];
 }
 
-// 4. Sort by score descending, then by fill_percent descending as tiebreaker
+// 4. Relevance filter — in query mode keep only groups that actually matched
+//    something related to the query (category/text score > 0).
+//    This prevents unrelated open groups from appearing in search results.
+if ($query_mode && !empty($query_keywords)) {
+    $results = array_values(array_filter($results, fn($r) => $r['score_breakdown']['category'] > 0));
+}
+
+// 5. Sort by score descending, then by fill_percent descending as tiebreaker
 usort($results, function($a, $b) {
     if ($b['score'] !== $a['score']) return $b['score'] - $a['score'];
     return $b['fill_percent'] - $a['fill_percent'];
 });
 
-// 5. Slice to limit
+// 6. Slice to limit
 $results = array_slice($results, 0, $limit);
+
+// 7. If query mode returned zero relevant open groups, search the products
+//    catalog so the frontend can offer "start a new group" for that product.
+$suggested_products = [];
+if ($query_mode && !empty($query_keywords) && empty($results)) {
+    $like_parts  = [];
+    $bind_params = [];
+    foreach ($query_keywords as $kw) {
+        $like_parts[]  = 'p.name LIKE ?';
+        $bind_params[] = '%' . $kw . '%';
+    }
+    $name_cond = implode(' OR ', $like_parts);
+    $cat_cond  = '';
+    if ($auto_category !== null) {
+        $cat_cond      = ' OR p.category = ?';
+        $bind_params[] = $auto_category;
+    }
+    $prod_stmt = $pdo->prepare("
+        SELECT p.id,
+               p.name        AS product_name,
+               p.image_url   AS product_image,
+               p.price_ils,
+               p.group_price_ils,
+               p.category,
+               ROUND((p.price_ils - p.group_price_ils) / NULLIF(p.price_ils,0) * 100) AS discount_percent,
+               b.business_name
+        FROM   products p
+        JOIN   businesses b ON b.id = p.business_id AND b.status = 'active'
+        WHERE  p.status = 'active'
+          AND  ({$name_cond}{$cat_cond})
+        ORDER  BY p.created_at DESC
+        LIMIT  5
+    ");
+    $prod_stmt->execute($bind_params);
+    $suggested_products = $prod_stmt->fetchAll();
+}
 
 echo json_encode([
     'meta' => [
-        'query_mode'     => $query_mode,
-        'query_keywords' => $query_keywords,
-        'auto_category'  => $auto_category,
-        'total_found'    => count($results),
+        'query_mode'         => $query_mode,
+        'query_keywords'     => $query_keywords,
+        'auto_category'      => $auto_category,
+        'total_found'        => count($results),
+        'suggested_products' => $suggested_products,
     ],
     'results' => array_values($results),
 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

@@ -287,6 +287,13 @@ main.main-content {
     transition: opacity .15s;
 }
 .sc-card-btn:hover { opacity: .9; color: white; }
+/* "Start a group" variant — outlined, fills on hover */
+.sc-card-btn-start {
+    background: white;
+    color: var(--primary);
+    border: 1.5px solid var(--primary);
+}
+.sc-card-btn-start:hover { background: var(--primary-gradient); color: white; border-color: transparent; opacity: 1; }
 
 /* ── Action chips (links under AI message) ───────────────── */
 .sc-actions {
@@ -561,6 +568,33 @@ function renderCards(results) {
     return `<div class="sc-cards">${items}</div>`;
 }
 
+/* ── Suggested products (no open group → start one) ────── */
+function renderSuggestedProducts(products) {
+    if (!products || !products.length) return '';
+    const items = products.map(p => {
+        const disc = parseInt(p.discount_percent) || 0;
+        return `
+        <div class="sc-card">
+            ${p.product_image
+                ? `<img class="sc-card-img" src="${SC_APP_URL}${esc(p.product_image)}" alt="${esc(p.product_name)}" loading="lazy">`
+                : `<div class="sc-card-img-placeholder">${catEmoji(p.category)}</div>`}
+            <div class="sc-card-body">
+                <div class="sc-card-title">${esc(p.product_name)}</div>
+                <div class="sc-card-biz">${esc(p.business_name)}</div>
+                <div class="sc-card-price-row">
+                    <span class="sc-card-price">₪${parseFloat(p.group_price_ils).toLocaleString()}</span>
+                    <span class="sc-card-orig">₪${parseFloat(p.price_ils).toLocaleString()}</span>
+                    ${disc > 0 ? `<span class="sc-card-badge">-${disc}%</span>` : ''}
+                </div>
+                <a href="${SC_APP_URL}/pages/product.php?id=${p.id}" class="sc-card-btn sc-card-btn-start">
+                    ✦ Start a Group
+                </a>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="sc-cards">${items}</div>`;
+}
+
 /* ── Natural language response builder ─────────────────── */
 function buildReply(meta, results, query) {
     const kws  = (meta && meta.query_keywords) ? meta.query_keywords : [];
@@ -585,10 +619,21 @@ function buildReply(meta, results, query) {
         };
     }
 
-    /* ── No results for query ── */
+    /* ── No open groups for query ── */
     if (!results.length) {
+        const suggested = (meta && meta.suggested_products) ? meta.suggested_products : [];
+
+        // Case A: product exists in catalog but no open group → offer to start one
+        if (suggested.length > 0) {
+            return {
+                text: `There's no open group for <strong>"${qDisp}"</strong> right now. 😕<br><br>But I found <strong>${suggested.length} matching product${suggested.length > 1 ? 's' : ''}</strong> in our catalog — you could start a new group and others will join! 💡`,
+                suggestedProducts: suggested,
+            };
+        }
+
+        // Case B: nothing anywhere in the platform
         return {
-            text: `I searched for <strong>"${qDisp}"</strong> but there are no open group purchases matching that right now. 😕<br><br>Here's what I suggest:<br>• Try a slightly different search term<br>• Browse all available groups to find something similar<br>• Come back later — new groups are added daily!`,
+            text: `I searched everywhere for <strong>"${qDisp}"</strong> but couldn't find any matching groups or products in our catalog. 😕<br><br>Try a different search term or browse all available deals!`,
             actions: [
                 {label:'🛍️ Browse all groups', href: SC_APP_URL + '/pages/browse.php'},
             ]
@@ -681,11 +726,15 @@ async function send(text) {
         await delay(550);
         hideTyping();
 
-        const reply = buildReply(meta, results, text);
-        const cards = renderCards(results);
+        const reply          = buildReply(meta, results, text);
+        const cards          = renderCards(results);
+        const suggestedCards = reply.suggestedProducts
+                                 ? renderSuggestedProducts(reply.suggestedProducts)
+                                 : '';
 
         let html = reply.text;
-        if (cards) html += cards;
+        if (cards)          html += cards;
+        if (suggestedCards) html += suggestedCards;
 
         if (reply.actions && reply.actions.length) {
             const chips = reply.actions.map(a =>
