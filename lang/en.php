@@ -123,6 +123,12 @@ return [
     'agent_urgency'     => 'Urgency',
     'agent_join'        => 'Join Group',
     'agent_rank'        => 'Rank',
+    'agent_search_label'       => 'What are you looking for?',
+    'agent_search_placeholder' => 'e.g. "JBL speaker" or "AirPods for students"',
+    'agent_search_btn'         => 'Search',
+    'agent_search_hint'        => 'Or use the filters below for preference-based recommendations.',
+    'agent_relevance'          => 'Text match',
+    'agent_results_for'        => 'Results for',
 
     // Auth
     'login_title'          => 'Sign In',

@@ -123,6 +123,12 @@ return [
     'agent_urgency'     => 'דחיפות',
     'agent_join'        => 'הצטרף לקבוצה',
     'agent_rank'        => 'דירוג',
+    'agent_search_label'       => 'מה אתה מחפש?',
+    'agent_search_placeholder' => 'לדוגמה: "רמקול JBL" או "AirPods לסטודנטים"',
+    'agent_search_btn'         => 'חיפוש',
+    'agent_search_hint'        => 'או השתמש בפילטרים למטה להמלצות לפי ההעדפות שלך.',
+    'agent_relevance'          => 'התאמת טקסט',
+    'agent_results_for'        => 'תוצאות עבור',
 
     // כניסה והרשמה
     'login_title'          => 'כניסה',

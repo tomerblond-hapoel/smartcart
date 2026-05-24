@@ -35,6 +35,28 @@ include __DIR__ . '/../includes/header.php';
     </div>
     <?php endif; ?>
 
+    <!-- AI Free-text Search Box -->
+    <div style="background:white;border-radius:var(--radius);padding:20px 24px;box-shadow:var(--shadow);margin-bottom:20px;border-left:4px solid var(--purple);">
+        <label for="agent-query" style="display:block;font-weight:600;font-size:14px;margin-bottom:10px;color:var(--gray-700);">
+            💬 <?= $t['agent_search_label'] ?>
+        </label>
+        <div style="display:flex;gap:10px;">
+            <input type="text" id="agent-query" class="form-control"
+                   placeholder="<?= htmlspecialchars($t['agent_search_placeholder']) ?>"
+                   style="flex:1;font-size:15px;" />
+            <button id="run-search" class="btn btn-primary" style="white-space:nowrap;display:flex;align-items:center;gap:6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <?= $t['agent_search_btn'] ?>
+            </button>
+        </div>
+        <p style="font-size:12px;color:var(--gray-500);margin-top:8px;margin-bottom:0;"><?= $t['agent_search_hint'] ?></p>
+    </div>
+
+    <!-- Query result strip (shown after a text search) -->
+    <div id="query-strip" style="display:none;background:#ede9fe;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#5b21b6;">
+        <strong>🔍 <?= $t['agent_results_for'] ?>:</strong> <span id="query-strip-text"></span>
+    </div>
+
     <!-- Filter Bar -->
     <div style="background:white;border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:24px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
         <div>
@@ -148,8 +170,20 @@ const AGENT_USER_ID = <?= $user_id ?>;
 const APP_URL_JS    = '<?= APP_URL ?>';
 const HAS_PREFS     = <?= $has_prefs ? 'true' : 'false' ?>;
 
-function renderAgentResults(results) {
+function renderAgentResults(results, meta) {
     const container = document.getElementById('agent-results');
+    const qMode     = !!(meta && meta.query_mode);
+    const catLabel  = qMode ? '<?= $t['agent_relevance'] ?>' : '<?= $t['agent_cat_match'] ?>';
+
+    // Show/hide query strip
+    const strip = document.getElementById('query-strip');
+    if (qMode && meta.query_keywords && meta.query_keywords.length) {
+        strip.style.display = 'block';
+        document.getElementById('query-strip-text').textContent = meta.query_keywords.join(', ');
+    } else {
+        strip.style.display = 'none';
+    }
+
     if (!results.length) {
         container.innerHTML = `<div class="empty-state">
             <h3><?= $t['agent_no_results'] ?></h3>
@@ -186,7 +220,7 @@ function renderAgentResults(results) {
                     <summary style="font-size:12px;cursor:pointer;color:var(--gray-500);"><?= $t['agent_why'] ?></summary>
                     <div style="margin-top:8px;padding:8px;background:var(--gray-100);border-radius:6px;">
                         ${[
-                            {label:'<?= $t['agent_cat_match'] ?>', pts: r.score_breakdown.category},
+                            {label: catLabel,                      pts: r.score_breakdown.category},
                             {label:'<?= $t['agent_location'] ?>', pts: r.score_breakdown.location},
                             {label:'<?= $t['agent_discount'] ?>', pts: r.score_breakdown.discount},
                             {label:'<?= $t['agent_fill'] ?>',     pts: r.score_breakdown.fill},
@@ -209,6 +243,7 @@ function renderAgentResults(results) {
 // Live geolocation (from "Use my location" button) — overrides saved profile coords
 let liveLocation = null;
 let lastResults  = [];
+let lastMeta     = null;
 
 document.getElementById('use-location').addEventListener('click', async function() {
     const btn = this;
@@ -291,9 +326,11 @@ document.getElementById('run-agent').addEventListener('click', async function() 
     results.innerHTML = '<p class="text-muted text-center" style="padding:40px;"><?= $t['loading'] ?></p>';
 
     const cat    = document.getElementById('cat-filter').value;
+    const query  = document.getElementById('agent-query').value.trim();
     const params = new URLSearchParams({ user_id: AGENT_USER_ID, limit: 20 });
-    if (dist) params.append('max_distance_km', dist);
-    if (cat)  params.append('category', cat);
+    if (dist)  params.append('max_distance_km', dist);
+    if (cat)   params.append('category', cat);
+    if (query) params.append('query', query);
     if (liveLocation) {
         params.append('live_lat', liveLocation.lat);
         params.append('live_lng', liveLocation.lng);
@@ -302,9 +339,9 @@ document.getElementById('run-agent').addEventListener('click', async function() 
     try {
         const res  = await fetch(`${APP_URL_JS}/api/agent.php?${params}`);
         const data = await res.json();
-        lastResults = Array.isArray(data) ? data : [];
-        renderAgentResults(lastResults);
-        // If map view is currently active, refresh it
+        lastMeta    = Array.isArray(data) ? null : (data.meta    || null);
+        lastResults = Array.isArray(data) ? data  : (data.results || []);
+        renderAgentResults(lastResults, lastMeta);
         if (document.getElementById('agent-map-wrap').style.display === 'block') {
             renderAgentMap(lastResults);
         }
@@ -314,6 +351,14 @@ document.getElementById('run-agent').addEventListener('click', async function() 
         btn.disabled = false;
         btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/></svg> Find Groups For Me';
     }
+});
+
+// Search box — trigger same agent run with the typed query
+document.getElementById('run-search').addEventListener('click', function() {
+    document.getElementById('run-agent').click();
+});
+document.getElementById('agent-query').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('run-agent').click();
 });
 
 // Auto-run on page load if user has prefs

@@ -23,6 +23,49 @@ $max_dist_km    = isset($_GET['max_distance_km']) && $_GET['max_distance_km'] !=
                     ? (float)$_GET['max_distance_km']
                     : null; // null = no distance filter
 
+// Natural language query search
+$query          = isset($_GET['query']) ? trim($_GET['query']) : '';
+$query_mode     = $query !== '';
+$query_keywords = [];
+$auto_category  = null;
+$filter_category = isset($_GET['category']) && $_GET['category'] !== '' ? $_GET['category'] : null;
+
+if ($query_mode) {
+    $stop_words = ['i','am','looking','for','need','want','find','a','an','the','some',
+                   'any','give','show','me','buy','get','can','you','please','best',
+                   'good','cheap','great','new','top','something','like','students','student',
+                   'is','are','was','be','do','does','have','has','will','would','could'];
+    $words          = preg_split('/[\s,;.!?]+/', strtolower($query), -1, PREG_SPLIT_NO_EMPTY);
+    $query_keywords = array_values(array_filter($words, fn($w) => strlen($w) >= 2 && !in_array($w, $stop_words)));
+
+    $kw_cat_map = [
+        'electronics' => ['speaker','speakers','headphone','headphones','earphone','earphones',
+                          'airpods','jbl','sony','samsung','bose','apple','iphone','laptop',
+                          'computer','tablet','ipad','tv','camera','phone','bluetooth','earbuds',
+                          'keyboard','mouse','gaming','console','xbox','playstation','charger'],
+        'home'        => ['sofa','chair','table','desk','bed','mattress','lamp','shelf',
+                          'cabinet','pan','pot','blender','vacuum','curtain','rug','towel','mirror'],
+        'fashion'     => ['shirt','jeans','dress','shoes','sneakers','bag','jacket','coat',
+                          'hat','socks','pants','clothes','sandals','boots','watch'],
+        'food'        => ['food','snack','coffee','tea','juice','organic','protein','vitamin'],
+        'sports'      => ['gym','fitness','yoga','running','bike','bicycle','football','basketball',
+                          'tennis','exercise','weights','dumbbell','treadmill'],
+        'beauty'      => ['makeup','lipstick','skincare','cream','serum','perfume','shampoo','lotion'],
+        'toys'        => ['toy','toys','game','games','lego','doll','puzzle','kids','children'],
+        'books'       => ['book','books','novel','textbook','guide','cookbook'],
+        'automotive'  => ['car','tire','wheel','motor','engine'],
+    ];
+
+    foreach ($kw_cat_map as $cat => $cat_kws) {
+        foreach ($query_keywords as $kw) {
+            if (in_array($kw, $cat_kws)) {
+                $auto_category = $cat;
+                break 2;
+            }
+        }
+    }
+}
+
 if (!$user_id) {
     json_response(['error' => 'user_id is required'], 400);
 }
@@ -96,8 +139,35 @@ foreach ($groups as $g) {
         'urgency'  => 0,
     ];
 
-    // ── Category match (+30) ──────────────────────────────
-    if (!empty($user_cats) && in_array($g['category'], $user_cats)) {
+    // ── Category / Text relevance match (+30) ────────────────
+    // Apply category dropdown filter (skip non-matching groups entirely)
+    if ($filter_category !== null && $g['category'] !== $filter_category) {
+        continue;
+    }
+
+    if ($query_mode && !empty($query_keywords)) {
+        $name_lower = strtolower($g['product_name']);
+        $biz_lower  = strtolower($g['business_name']);
+        $kw_hits    = 0;
+        foreach ($query_keywords as $kw) {
+            if (strpos($name_lower, $kw) !== false) $kw_hits++;
+        }
+        $total_kws = count($query_keywords);
+        if ($kw_hits >= min(2, $total_kws)) {
+            $cat_pts = 30;
+        } elseif ($kw_hits === 1) {
+            $cat_pts = 20;
+        } else {
+            $biz_match = false;
+            foreach ($query_keywords as $kw) {
+                if (strpos($biz_lower, $kw) !== false) { $biz_match = true; break; }
+            }
+            $cat_match = $auto_category !== null && $g['category'] === $auto_category;
+            $cat_pts   = $biz_match ? 10 : ($cat_match ? 15 : 0);
+        }
+        $score += $cat_pts;
+        $breakdown['category'] = $cat_pts;
+    } elseif (!empty($user_cats) && in_array($g['category'], $user_cats)) {
         $score += 30;
         $breakdown['category'] = 30;
     }
@@ -202,5 +272,12 @@ usort($results, function($a, $b) {
 // 5. Slice to limit
 $results = array_slice($results, 0, $limit);
 
-// Return as flat array (no wrapper key) for easy frontend iteration
-echo json_encode(array_values($results), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+echo json_encode([
+    'meta' => [
+        'query_mode'     => $query_mode,
+        'query_keywords' => $query_keywords,
+        'auto_category'  => $auto_category,
+        'total_found'    => count($results),
+    ],
+    'results' => array_values($results),
+], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
