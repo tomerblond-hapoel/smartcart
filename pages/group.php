@@ -100,6 +100,38 @@ if ($is_member && $user_id && in_array($group['status'], ['ready_for_payment', '
     $my_payment = $pstmt->fetch() ?: null;
 }
 
+// ── Payment collection progress (ready_for_payment + order_ready) ─────────────
+// Keyed by user_id so we can look up each member's status in O(1) while looping.
+$pay_progress_by_user = [];
+$paid_count           = 0;
+$total_collected      = 0.0;
+
+if (in_array($group['status'], ['ready_for_payment', 'order_ready'], true)) {
+    $pp = $pdo->prepare("
+        SELECT gm.user_id,
+               pay.status    AS pay_status,
+               pay.amount_ils,
+               pay.paid_at
+        FROM   group_members gm
+        LEFT JOIN payments pay
+               ON  pay.group_id = gm.group_id
+               AND pay.user_id  = gm.user_id
+        WHERE  gm.group_id = ?
+          AND  gm.status  != 'cancelled'
+    ");
+    $pp->execute([$group_id]);
+    foreach ($pp->fetchAll() as $row) {
+        $pay_progress_by_user[(int)$row['user_id']] = $row;
+        if (in_array($row['pay_status'], ['paid', 'completed'], true)) {
+            $paid_count++;
+            $total_collected += (float)$row['amount_ils'];
+        }
+    }
+}
+
+$total_member_count = count($members);
+$total_expected     = $total_member_count * (float)$group['group_price_ils'];
+
 // Detect which join-flow the server is running so the UI can show the right button
 $hosted_payment_mode = defined('PAYMENT_PROVIDER')
     && PAYMENT_PROVIDER !== ''
@@ -373,17 +405,86 @@ include __DIR__ . '/../includes/header.php';
             <div class="card" style="margin-bottom:16px;">
                 <div class="card-header">
                     <strong><?= $t['group_members_title'] ?></strong>
+                    <?php if ($paid_count > 0): ?>
+                    <span style="margin-left:auto;font-size:11px;color:var(--gray-500);font-weight:500;">
+                        <?= $paid_count ?>/<?= $total_member_count ?> paid
+                    </span>
+                    <?php endif; ?>
                 </div>
+
+                <?php if ($is_member && !empty($pay_progress_by_user)): ?>
+                <!-- Payment collection progress — visible to all group members -->
+                <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">
+
+                    <!-- Amount summary -->
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+                        <span style="font-size:13px;font-weight:700;color:var(--gray-900);">
+                            💰 <?= format_ils($total_collected) ?> collected
+                        </span>
+                        <span style="font-size:11px;color:var(--gray-400);">
+                            of <?= format_ils($total_expected) ?> total
+                        </span>
+                    </div>
+
+                    <!-- Progress bar -->
+                    <?php
+                        $collect_pct = $total_expected > 0
+                            ? min(100, (int)round($total_collected / $total_expected * 100))
+                            : 0;
+                        $bar_color = $collect_pct >= 100
+                            ? 'var(--green)'
+                            : ($collect_pct >= 50 ? 'var(--primary)' : 'var(--orange)');
+                    ?>
+                    <div style="height:8px;background:var(--gray-200);border-radius:999px;overflow:hidden;margin-bottom:6px;">
+                        <div style="height:100%;width:<?= $collect_pct ?>%;background:<?= $bar_color ?>;border-radius:999px;transition:width .4s;"></div>
+                    </div>
+
+                    <!-- X of Y paid label -->
+                    <div style="font-size:11px;color:var(--gray-500);">
+                        <?= $paid_count ?> of <?= $total_member_count ?> member<?= $total_member_count !== 1 ? 's' : '' ?> paid
+                        <?php if ($paid_count < $total_member_count): ?>
+                        · <span style="color:var(--orange);font-weight:600;"><?= $total_member_count - $paid_count ?> still pending</span>
+                        <?php else: ?>
+                        · <span style="color:var(--green);font-weight:600;">All paid ✓</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <div class="card-body" style="padding:12px;">
                     <?php foreach ($members as $m):
-                        $initials = strtoupper(substr($m['full_name'], 0, 1));
+                        $initials  = strtoupper(substr($m['full_name'], 0, 1));
+                        $is_me     = $user_id && (int)$m['user_id'] === $user_id;
+                        $pay_row   = $pay_progress_by_user[(int)$m['user_id']] ?? null;
+                        $mem_paid  = $pay_row && in_array($pay_row['pay_status'], ['paid','completed'], true);
+                        $mem_name  = htmlspecialchars($m['full_name']) . ($is_me ? ' (you)' : '');
                     ?>
-                    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;">
-                        <div style="width:32px;height:32px;border-radius:50%;background:var(--purple);color:white;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">
-                            <?= $initials ?>
+                    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;<?= $pay_row && !$mem_paid ? 'opacity:.75;' : '' ?>">
+                        <div style="width:32px;height:32px;border-radius:50%;background:<?= $mem_paid ? '#166534' : 'var(--purple)' ?>;color:white;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">
+                            <?php if ($mem_paid): ?>✓<?php else: ?><?= $initials ?><?php endif; ?>
                         </div>
-                        <span style="font-size:13px;"><?= htmlspecialchars($m['full_name']) ?></span>
-                        <?php if ($m['status'] === 'paid'): ?>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:<?= $is_me ? '700' : '500' ?>;">
+                                <?= $mem_name ?>
+                            </div>
+                            <?php if ($pay_row && $mem_paid && $pay_row['paid_at']): ?>
+                            <div style="font-size:10.5px;color:var(--gray-400);">
+                                Paid <?= date('d/m H:i', strtotime($pay_row['paid_at'])) ?>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                        <?php if ($pay_row): ?>
+                            <?php if ($mem_paid): ?>
+                            <div style="text-align:right;flex-shrink:0;">
+                                <span class="card-badge badge-paid"><?= $t['group_paid_badge'] ?></span>
+                                <div style="font-size:10.5px;color:var(--gray-400);margin-top:2px;"><?= format_ils((float)$pay_row['amount_ils']) ?></div>
+                            </div>
+                            <?php else: ?>
+                            <span style="font-size:11px;font-weight:600;color:var(--orange);background:#FEF3C7;border-radius:6px;padding:2px 8px;flex-shrink:0;">
+                                Pending
+                            </span>
+                            <?php endif; ?>
+                        <?php elseif ($m['status'] === 'paid'): ?>
                         <span class="card-badge badge-paid" style="margin-left:auto;"><?= $t['group_paid_badge'] ?></span>
                         <?php endif; ?>
                     </div>
