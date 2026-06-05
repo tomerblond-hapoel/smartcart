@@ -1,10 +1,13 @@
-# Disable PHP execution in uploads directory
-php_flag engine off
-<Files "*.php">
+# Block PHP execution in the uploads directory.
+# Uses only directives compatible with PHP-FPM / FastCGI (cPanel default).
+# php_flag is intentionally omitted — it causes HTTP 500 on PHP-FPM servers.
+
+# Deny direct requests for any PHP-like file
+<FilesMatch "\.(php|php3|php4|php5|php7|phar|phtml|shtml)$">
     Order Deny,Allow
     Deny from all
-</Files>
-<Files "*.phtml">
-    Order Deny,Allow
-    Deny from all
-</Files>
+</FilesMatch>
+
+# Remove PHP handler so renamed files can't be executed either
+RemoveHandler .php .php3 .php4 .php5 .php7 .phar .phtml .shtml
+RemoveType   .php .php3 .php4 .php5 .php7 .phar .phtml .shtml
