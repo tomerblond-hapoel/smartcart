@@ -239,7 +239,24 @@ main.main-content {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
-.sc-card-biz { font-size: 11px; color: var(--gray-500); margin-bottom: 8px; }
+.sc-card-biz { font-size: 11px; color: var(--gray-500); margin-bottom: 5px; }
+.sc-card-reason {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--primary-50);
+    color: var(--primary);
+    border: 1px solid var(--primary-light);
+    border-radius: 20px;
+    padding: 2px 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    margin-bottom: 7px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .sc-card-price-row {
     display: flex;
     align-items: baseline;
@@ -543,17 +560,21 @@ function hideTyping() {
 /* ── Product cards ──────────────────────────────────────── */
 function renderCards(results) {
     if (!results || !results.length) return '';
-    const items = results.slice(0, 5).map(r => {
+    const items = results.slice(0, 3).map(r => {
         const fillColor = r.fill_percent >= 75 ? 'var(--green)' : r.fill_percent >= 40 ? 'var(--orange)' : 'var(--primary)';
         const img = r.product_image
             ? `<img class="sc-card-img" src="${imgSrc(r.product_image)}" alt="${esc(r.product_name)}" loading="lazy">`
             : `<div class="sc-card-img-placeholder">${catEmoji(r.category)}</div>`;
+        const reason = r.match_reason
+            ? `<div class="sc-card-reason">🎯 ${esc(r.match_reason)}</div>`
+            : '';
         return `
         <div class="sc-card">
             ${img}
             <div class="sc-card-body">
                 <div class="sc-card-title">${esc(r.product_name)}</div>
                 <div class="sc-card-biz">${esc(r.business_name)}${r.city ? ' · ' + esc(r.city) : ''}</div>
+                ${reason}
                 <div class="sc-card-price-row">
                     <span class="sc-card-price">₪${r.group_price_ils.toLocaleString()}</span>
                     <span class="sc-card-orig">₪${r.price_ils.toLocaleString()}</span>
@@ -689,8 +710,10 @@ function buildReply(meta, results, query) {
     if (urgent.length)
         urgency = `<br><br>⚡ <strong>${urgent.length} group${urgent.length>1?' are':' is'} closing in under 3 days</strong> — act fast!`;
 
-    const actions = [];
-    if (n > 5) actions.push({label:`🔍 See all ${n} results`, href: SC_APP_URL + '/pages/browse.php'});
+    /* ── Always offer a browse link in query mode ── */
+    const actions = [
+        {label: '🔍 Browse all deals', href: SC_APP_URL + '/pages/browse.php'},
+    ];
 
     return { text: intro + detail + urgency, actions };
 }
@@ -722,7 +745,7 @@ async function send(text) {
     showTyping();
 
     try {
-        const p = new URLSearchParams({ user_id: SC_USER_ID, limit: 10 });
+        const p = new URLSearchParams({ user_id: SC_USER_ID, limit: text ? 3 : 10 });
         if (text) p.append('query', text);
         const res  = await fetch(`${SC_APP_URL}/api/agent.php?${p}`);
         const data = await res.json();
