@@ -1,8 +1,14 @@
 <?php
-// SmartCart — PayPal Payments API
-// POST ?action=create_order   — creates a PayPal order, returns {orderID}
-// POST ?action=capture_order  — captures approved order, creates Payment + Order records
-// GET  ?action=status&group_id= — check if current user has paid for a group
+// SmartCart — Payments API
+//
+// Legacy PayPal actions (V3 authorize/capture flow):
+//   POST ?action=create_order   — creates a PayPal order, returns {orderID}
+//   POST ?action=capture_order  — captures approved order, creates Payment + Order records
+//
+// Hosted payment flow actions (V4):
+//   GET  ?action=status&group_id=  — check payment status for current user + group
+//   GET  ?action=get_url&group_id= — return the payment_url for current user + group
+//   POST ?action=retry&group_id=   — re-generate a payment link for a failed payment
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
@@ -19,6 +25,10 @@ if ($action === 'create_order') {
     capture_paypal_order();
 } elseif ($action === 'status') {
     check_payment_status();
+} elseif ($action === 'get_url') {
+    get_payment_url();
+} elseif ($action === 'retry' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    retry_payment();
 } else {
     json_response(['error' => 'Unknown action'], 400);
 }
@@ -208,6 +218,7 @@ function capture_paypal_order(): void {
 
 // ─────────────────────────────────────────────────────────
 // GET action=status&group_id=
+// Returns full payment state for the current user + group.
 // ─────────────────────────────────────────────────────────
 function check_payment_status(): void {
     if (session_status() === PHP_SESSION_NONE) session_start();
@@ -215,13 +226,146 @@ function check_payment_status(): void {
     $group_id = (int)($_GET['group_id'] ?? 0);
 
     if (!$user_id || !$group_id) {
-        json_response(['paid' => false]);
+        json_response(['paid' => false, 'status' => null, 'payment_url' => null]);
     }
 
     $pdo  = getPDO();
-    $stmt = $pdo->prepare("SELECT status FROM payments WHERE group_id = ? AND user_id = ? AND status = 'completed'");
+    $stmt = $pdo->prepare("
+        SELECT id, status, payment_url, provider_transaction_id, paid_at
+        FROM   payments
+        WHERE  group_id = ? AND user_id = ?
+        ORDER  BY created_at DESC
+        LIMIT  1
+    ");
     $stmt->execute([$group_id, $user_id]);
-    $paid = (bool)$stmt->fetch();
+    $pay = $stmt->fetch();
 
-    json_response(['paid' => $paid]);
+    $is_paid = $pay && in_array($pay['status'], ['paid', 'completed'], true);
+
+    json_response([
+        'paid'         => $is_paid,
+        'status'       => $pay['status']       ?? null,
+        'payment_url'  => $pay['payment_url']  ?? null,
+        'payment_id'   => $pay['id']           ?? null,
+        'paid_at'      => $pay['paid_at']      ?? null,
+    ]);
+}
+
+// ─────────────────────────────────────────────────────────
+// GET action=get_url&group_id=
+// Returns the payment_url for the current user's pending payment.
+// Used by the "Pay Now" button on the group page.
+// ─────────────────────────────────────────────────────────
+function get_payment_url(): void {
+    if (session_status() === PHP_SESSION_NONE) session_start();
+    $user_id  = !empty($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
+    $group_id = (int)($_GET['group_id'] ?? 0);
+
+    if (!$user_id || !$group_id) {
+        json_response(['error' => 'user and group_id required'], 400);
+    }
+
+    $pdo  = getPDO();
+    $stmt = $pdo->prepare("
+        SELECT id, status, payment_url
+        FROM   payments
+        WHERE  group_id = ? AND user_id = ?
+        ORDER  BY created_at DESC
+        LIMIT  1
+    ");
+    $stmt->execute([$group_id, $user_id]);
+    $pay = $stmt->fetch();
+
+    if (!$pay) {
+        json_response(['error' => 'No payment record found for this group'], 404);
+    }
+    if (in_array($pay['status'], ['paid', 'completed'], true)) {
+        json_response(['already_paid' => true, 'status' => $pay['status']]);
+    }
+    if (empty($pay['payment_url'])) {
+        json_response(['error' => 'Payment link not yet generated. Please refresh and try again.'], 503);
+    }
+
+    json_response([
+        'payment_url' => $pay['payment_url'],
+        'payment_id'  => (int)$pay['id'],
+        'status'      => $pay['status'],
+    ]);
+}
+
+// ─────────────────────────────────────────────────────────
+// POST action=retry&group_id=
+// Re-generates a hosted payment link for a failed payment.
+// Idempotent: if a pending link already exists it is returned unchanged.
+// ─────────────────────────────────────────────────────────
+function retry_payment(): void {
+    $user_id  = require_auth();
+    $group_id = (int)($_GET['group_id'] ?? 0);
+
+    if (!$group_id) {
+        json_response(['error' => 'group_id required'], 400);
+    }
+
+    require_once __DIR__ . '/../services/PaymentService.php';
+    $pdo = getPDO();
+
+    // Find the most recent payment record for this user + group
+    $stmt = $pdo->prepare("
+        SELECT pay.id, pay.status, pay.payment_url,
+               pay.amount_ils, pay.product_id,
+               gp.product_id AS gp_product_id,
+               p.name AS product_name, p.group_price_ils,
+               u.full_name, u.email, u.phone
+        FROM   payments pay
+        JOIN   group_purchases gp ON gp.id = pay.group_id
+        JOIN   products p         ON p.id  = gp.product_id
+        JOIN   users u            ON u.id  = pay.user_id
+        WHERE  pay.group_id = ? AND pay.user_id = ?
+        ORDER  BY pay.created_at DESC
+        LIMIT  1
+    ");
+    $stmt->execute([$group_id, $user_id]);
+    $pay = $stmt->fetch();
+
+    if (!$pay) {
+        json_response(['error' => 'No payment record found for this group'], 404);
+    }
+    if (in_array($pay['status'], ['paid', 'completed'], true)) {
+        json_response(['already_paid' => true, 'status' => $pay['status']]);
+    }
+
+    // If there's already a working pending link, return it
+    if ($pay['status'] === 'pending' && !empty($pay['payment_url'])) {
+        json_response(['payment_url' => $pay['payment_url'], 'payment_id' => (int)$pay['id']]);
+    }
+
+    // (Re-)generate the payment link
+    $link = PaymentService::createPaymentLink([
+        'id'          => (int)$pay['id'],
+        'user_id'     => $user_id,
+        'group_id'    => $group_id,
+        'product_id'  => (int)($pay['product_id'] ?: $pay['gp_product_id']),
+        'amount'      => (float)($pay['amount_ils'] ?: $pay['group_price_ils']),
+        'currency'    => 'ILS',
+        'description' => $pay['product_name'] . ' (Group #' . $group_id . ')',
+        'user_name'   => $pay['full_name'],
+        'user_email'  => $pay['email'],
+        'user_phone'  => $pay['phone'] ?? '',
+    ]);
+
+    if (!$link['ok']) {
+        json_response(['error' => $link['error'] ?? 'Failed to generate payment link'], 502);
+    }
+
+    // Reset to pending with fresh URL
+    $pdo->prepare("
+        UPDATE payments
+        SET    status                 = 'pending',
+               payment_url             = ?,
+               provider_transaction_id = ?,
+               last_error              = NULL
+        WHERE  id = ?
+    ")->execute([$link['payment_url'], $link['transaction_id'], $pay['id']]);
+
+    json_response(['payment_url' => $link['payment_url'], 'payment_id' => (int)$pay['id']]);
 }

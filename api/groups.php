@@ -15,6 +15,15 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/paypal.php';
 require_once __DIR__ . '/../includes/notifications.php';
 
+// ── Payment-mode helper ───────────────────────────────────────────────────────
+// Returns true when the hosted-payment-page flow is active (PayMe / Meshulam /
+// mock). Returns false when PAYMENT_PROVIDER is empty or 'paypal', meaning the
+// legacy PayPal authorize-on-join flow stays in effect.
+function is_hosted_payment_mode(): bool {
+    $p = defined('PAYMENT_PROVIDER') ? strtolower(trim(PAYMENT_PROVIDER)) : '';
+    return $p !== '' && $p !== 'paypal';
+}
+
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 
@@ -32,7 +41,11 @@ if ($action === 'list') {
 } elseif ($action === 'complete_join' && isset($_GET['group_id'])) {
     complete_join((int)$_GET['group_id']);
 } elseif ($action === 'join' && isset($_GET['group_id'])) {
-    join_group((int)$_GET['group_id']);  // legacy: dev-mode direct join without PayPal
+    if (is_hosted_payment_mode()) {
+        hosted_join_group((int)$_GET['group_id']);  // hosted-payment flow: free join, pay later
+    } else {
+        join_group((int)$_GET['group_id']);         // legacy: dev-mode direct join without PayPal
+    }
 } elseif ($action === 'leave' && isset($_GET['group_id'])) {
     leave_group((int)$_GET['group_id']);
 } elseif ($action === 'message' && isset($_GET['group_id'])) {
@@ -664,4 +677,193 @@ function run_expire_failed_groups(): array {
             APP_URL . '/pages/my-groups.php');
     }
     return ['expired' => count($ids), 'voided' => $voided_total];
+}
+
+// ─────────────────────────────────────────────────────────
+// Hosted-payment-page join (no PayPal — payment happens after group fills)
+// ─────────────────────────────────────────────────────────
+function hosted_join_group(int $group_id): void {
+    $user_id = require_auth();
+    $pdo     = getPDO();
+
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("
+            SELECT gp.id, gp.status, gp.current_participants, gp.target_participants,
+                   p.group_price_ils
+            FROM   group_purchases gp
+            JOIN   products p ON p.id = gp.product_id
+            WHERE  gp.id = ? FOR UPDATE
+        ");
+        $stmt->execute([$group_id]);
+        $group = $stmt->fetch();
+
+        if (!$group) {
+            $pdo->rollBack();
+            json_response(['error' => 'Group not found'], 404);
+        }
+        if ($group['status'] !== 'open') {
+            $pdo->rollBack();
+            json_response(['error' => 'This group is no longer open for joining'], 409);
+        }
+        if ((int)$group['current_participants'] >= (int)$group['target_participants']) {
+            $pdo->rollBack();
+            json_response(['error' => 'This group is already full'], 409);
+        }
+
+        $check = $pdo->prepare("SELECT id FROM group_members WHERE group_id = ? AND user_id = ?");
+        $check->execute([$group_id, $user_id]);
+        if ($check->fetch()) {
+            $pdo->rollBack();
+            json_response(['error' => 'You are already a member of this group'], 409);
+        }
+
+        // Simple join — no payment commitment yet
+        $pdo->prepare("INSERT INTO group_members (group_id, user_id, status) VALUES (?, ?, 'joined')")
+            ->execute([$group_id, $user_id]);
+
+        $new_count = (int)$group['current_participants'] + 1;
+        $target    = (int)$group['target_participants'];
+        $pdo->prepare("UPDATE group_purchases SET current_participants = ? WHERE id = ?")
+            ->execute([$new_count, $group_id]);
+
+        $newly_filled = false;
+        if ($new_count >= $target) {
+            // Group is full → transition to ready_for_payment
+            $pdo->prepare("UPDATE group_purchases SET status = 'ready_for_payment' WHERE id = ?")
+                ->execute([$group_id]);
+            $newly_filled = true;
+        }
+
+        $pdo->commit();
+
+        // Notify the user who just joined
+        notify($user_id, 'group_joined',
+            'You joined a group!',
+            'You\'ll be notified when the group fills and payment is due.',
+            APP_URL . '/pages/group.php?id=' . $group_id);
+
+        // After commit: if group just filled, create payment records for all members
+        if ($newly_filled) {
+            $payment_results = initiate_hosted_payments($group_id);
+            notify_group_members($group_id, 'payment_required',
+                'Group is full — payment required!',
+                'Your group has reached its target. Visit the group page and click "Pay Now" to complete your purchase.',
+                APP_URL . '/pages/group.php?id=' . $group_id);
+        }
+
+        json_response([
+            'success'      => true,
+            'current'      => $new_count,
+            'target'       => $target,
+            'fill_pct'     => (int)round($new_count / max(1, $target) * 100),
+            'group_filled' => $newly_filled,
+        ]);
+
+    } catch (\Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        json_response(['error' => 'Failed to join. Please try again.'], 500);
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// Create payment records + hosted payment URLs for all members of a group.
+// Called once when the group reaches its target (hosted payment mode).
+// Safe to call multiple times — checks for existing records to prevent duplicates.
+// ─────────────────────────────────────────────────────────
+function initiate_hosted_payments(int $group_id): array {
+    require_once __DIR__ . '/../services/PaymentService.php';
+
+    $pdo = getPDO();
+
+    // Load group + product details
+    $stmt = $pdo->prepare("
+        SELECT gp.id, gp.product_id,
+               p.name AS product_name, p.group_price_ils
+        FROM   group_purchases gp
+        JOIN   products p ON p.id = gp.product_id
+        WHERE  gp.id = ?
+    ");
+    $stmt->execute([$group_id]);
+    $group = $stmt->fetch();
+    if (!$group) return ['ok' => false, 'error' => 'Group not found'];
+
+    // Load all non-cancelled members with their contact info
+    $mstmt = $pdo->prepare("
+        SELECT gm.user_id, u.full_name, u.email, u.phone
+        FROM   group_members gm
+        JOIN   users u ON u.id = gm.user_id
+        WHERE  gm.group_id = ? AND gm.status != 'cancelled'
+    ");
+    $mstmt->execute([$group_id]);
+    $members = $mstmt->fetchAll();
+
+    $succeeded = 0;
+    $failed    = 0;
+    $provider  = defined('PAYMENT_PROVIDER') ? PAYMENT_PROVIDER : 'mock';
+
+    foreach ($members as $member) {
+        // ── Prevent duplicate payment records ────────────────────────────
+        $dup = $pdo->prepare("
+            SELECT id FROM payments
+            WHERE  group_id = ? AND user_id = ?
+              AND  status IN ('pending','paid','completed')
+            LIMIT 1
+        ");
+        $dup->execute([$group_id, $member['user_id']]);
+        if ($dup->fetch()) {
+            $succeeded++; // already has a live payment record — skip
+            continue;
+        }
+
+        // ── Create payment record ─────────────────────────────────────────
+        $pdo->prepare("
+            INSERT INTO payments
+                   (group_id, product_id, user_id, amount_ils, currency, status, provider)
+            VALUES (?,         ?,          ?,        ?,           'ILS',   'pending', ?)
+        ")->execute([
+            $group_id,
+            (int)$group['product_id'],
+            (int)$member['user_id'],
+            (float)$group['group_price_ils'],
+            $provider,
+        ]);
+        $payment_id = (int)$pdo->lastInsertId();
+
+        // ── Generate hosted payment URL ───────────────────────────────────
+        $link = PaymentService::createPaymentLink([
+            'id'          => $payment_id,
+            'user_id'     => (int)$member['user_id'],
+            'group_id'    => $group_id,
+            'product_id'  => (int)$group['product_id'],
+            'amount'      => (float)$group['group_price_ils'],
+            'currency'    => 'ILS',
+            'description' => $group['product_name'] . ' (Group #' . $group_id . ')',
+            'user_name'   => $member['full_name'],
+            'user_email'  => $member['email'],
+            'user_phone'  => $member['phone'] ?? '',
+        ]);
+
+        if ($link['ok']) {
+            $pdo->prepare("
+                UPDATE payments
+                SET    payment_url             = ?,
+                       provider_transaction_id = ?
+                WHERE  id = ?
+            ")->execute([$link['payment_url'], $link['transaction_id'], $payment_id]);
+            $succeeded++;
+        } else {
+            $pdo->prepare("UPDATE payments SET status = 'failed', last_error = ? WHERE id = ?")
+                ->execute([substr($link['error'] ?? 'Unknown error', 0, 500), $payment_id]);
+            PaymentService::log('initiate_payment_failed', [
+                'payment_id' => $payment_id,
+                'user_id'    => $member['user_id'],
+                'group_id'   => $group_id,
+                'error'      => $link['error'] ?? '',
+            ]);
+            $failed++;
+        }
+    }
+
+    return ['ok' => true, 'succeeded' => $succeeded, 'failed' => $failed];
 }

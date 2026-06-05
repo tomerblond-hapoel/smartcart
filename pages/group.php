@@ -84,6 +84,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['message_text']) && $u
 $fill_pct   = (int)$group['fill_pct'];
 $fill_class = $fill_pct >= 80 ? 'high' : ($fill_pct >= 50 ? 'medium' : '');
 $days_left  = days_until($group['deadline']);
+
+// ── Hosted-payment-page state ──────────────────────────────────────────────
+// Load the user's payment record when the group is in a payment-related status
+$my_payment = null;
+if ($is_member && $user_id && in_array($group['status'], ['ready_for_payment', 'order_ready'], true)) {
+    $pstmt = $pdo->prepare("
+        SELECT id, status, payment_url, provider_transaction_id, paid_at
+        FROM   payments
+        WHERE  group_id = ? AND user_id = ?
+        ORDER  BY created_at DESC
+        LIMIT  1
+    ");
+    $pstmt->execute([$group_id, $user_id]);
+    $my_payment = $pstmt->fetch() ?: null;
+}
+
+// Detect which join-flow the server is running so the UI can show the right button
+$hosted_payment_mode = defined('PAYMENT_PROVIDER')
+    && PAYMENT_PROVIDER !== ''
+    && PAYMENT_PROVIDER !== 'paypal';
 $cat_icons  = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
 
 $page_title = $group['product_name'];
@@ -203,7 +223,17 @@ include __DIR__ . '/../includes/header.php';
                     </div>
 
                     <!-- Status Banner -->
-                    <?php if ($group['status'] === 'closed'): ?>
+                    <?php if ($group['status'] === 'ready_for_payment'): ?>
+                    <div style="background:#EEF2FF;border-radius:8px;padding:12px;margin-bottom:16px;text-align:center;">
+                        <strong style="color:#4338CA;">💳 <?= $t['group_ready_for_payment'] ?></strong>
+                        <p style="font-size:12px;color:#6366F1;margin-top:4px;"><?= $t['group_ready_for_payment_desc'] ?></p>
+                    </div>
+                    <?php elseif ($group['status'] === 'order_ready'): ?>
+                    <div style="background:#DCFCE7;border-radius:8px;padding:12px;margin-bottom:16px;text-align:center;">
+                        <strong style="color:#166534;">🎉 <?= $t['group_order_ready'] ?></strong>
+                        <p style="font-size:12px;color:#16A34A;margin-top:4px;"><?= $t['group_order_ready_desc'] ?></p>
+                    </div>
+                    <?php elseif ($group['status'] === 'closed'): ?>
                     <div style="background:#DBEAFE;border-radius:8px;padding:12px;margin-bottom:16px;text-align:center;">
                         <strong style="color:#1D4ED8;"><?= $t['group_pay_required'] ?></strong>
                         <p style="font-size:12px;color:#3B82F6;margin-top:4px;"><?= $t['group_pay_desc'] ?></p>
@@ -220,24 +250,41 @@ include __DIR__ . '/../includes/header.php';
                         <a href="<?= APP_URL ?>/pages/login.php" class="btn btn-primary btn-full btn-lg">
                             Login to Join
                         </a>
+
                         <?php elseif (!$is_member): ?>
-                        <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;text-align:center;">
-                            <?php $paypal_live = defined('PAYPAL_CLIENT_ID') && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false && PAYPAL_CLIENT_ID !== ''; ?>
-                            <?php if ($paypal_live): ?>
-                                Click below to commit. We hold your payment via PayPal — you're only charged once the group succeeds.
+                            <?php if ($hosted_payment_mode): ?>
+                            <!-- Hosted payment flow: simple join, pay later -->
+                            <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;text-align:center;">
+                                Join for free — you'll be asked to pay once the group reaches its target.
+                            </p>
+                            <button class="btn btn-primary btn-full btn-lg"
+                                    data-action="join-group"
+                                    data-group-id="<?= $group_id ?>">
+                                <?= $t['group_join'] ?>
+                            </button>
                             <?php else: ?>
-                                Click below to join. Your spot is reserved instantly — payment is captured only when the group reaches its target.
+                            <!-- Legacy PayPal flow -->
+                            <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;text-align:center;">
+                                <?php $paypal_live = defined('PAYPAL_CLIENT_ID') && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false && PAYPAL_CLIENT_ID !== ''; ?>
+                                <?php if ($paypal_live): ?>
+                                    Click below to commit. We hold your payment via PayPal — you're only charged once the group succeeds.
+                                <?php else: ?>
+                                    Click below to join. Your spot is reserved instantly — payment is captured only when the group reaches its target.
+                                <?php endif; ?>
+                            </p>
+                            <div id="paypal-button-container"></div>
+                            <button id="dev-join-btn" class="btn btn-primary btn-full btn-lg" data-action="join-group" data-group-id="<?= $group_id ?>" style="display:none;">
+                                <?= $t['group_join'] ?>
+                            </button>
                             <?php endif; ?>
-                        </p>
-                        <div id="paypal-button-container"></div>
-                        <button id="dev-join-btn" class="btn btn-primary btn-full btn-lg" data-action="join-group" data-group-id="<?= $group_id ?>" style="display:none;">
-                            <?= $t['group_join'] ?>
-                        </button>
-                        <?php else: ?>
+
+                        <?php else: /* already a member */ ?>
                         <div style="background:var(--primary-50);border-radius:8px;padding:12px;text-align:center;margin-bottom:12px;">
                             <span style="color:var(--primary);font-weight:600;">
                                 <?php if ($my_status === 'paid'): ?>
                                     ✓ Payment captured — order created
+                                <?php elseif ($hosted_payment_mode): ?>
+                                    ✓ You're in! You'll be notified when payment is due.
                                 <?php else: ?>
                                     ✓ You're in! Payment authorized — charged when group succeeds.
                                 <?php endif; ?>
@@ -251,6 +298,59 @@ include __DIR__ . '/../includes/header.php';
                             <?= $t['group_leave'] ?>
                         </button>
                         <?php endif; ?>
+                        <?php endif; ?>
+
+                    <?php elseif ($group['status'] === 'ready_for_payment'): ?>
+                        <?php if (!$is_member): ?>
+                        <div style="background:#F3F4F6;border-radius:8px;padding:12px;text-align:center;">
+                            <span style="color:var(--gray-600);font-weight:600;">Group is full</span>
+                            <p style="font-size:12px;color:var(--gray-500);margin-top:4px;">This group has reached its target and is awaiting payment from members.</p>
+                        </div>
+
+                        <?php elseif ($my_payment && in_array($my_payment['status'], ['paid','completed'], true)): ?>
+                        <!-- Already paid -->
+                        <div style="background:#DCFCE7;border-radius:8px;padding:14px;text-align:center;">
+                            <span style="color:#166534;font-weight:700;font-size:15px;">✓ <?= $t['payment_paid'] ?></span>
+                            <br><a href="<?= APP_URL ?>/pages/my-orders.php" style="font-size:12px;color:#16A34A;margin-top:4px;display:inline-block;">View your order →</a>
+                        </div>
+
+                        <?php elseif ($my_payment && $my_payment['status'] === 'pending' && !empty($my_payment['payment_url'])): ?>
+                        <!-- Pending payment — show Pay Now button -->
+                        <a href="<?= htmlspecialchars($my_payment['payment_url']) ?>"
+                           class="btn btn-primary btn-full btn-lg"
+                           style="text-align:center;display:block;text-decoration:none;"
+                           id="pay-now-btn">
+                            💳 <?= $t['group_pay'] ?> — <?= format_ils((float)$group['group_price_ils']) ?>
+                        </a>
+                        <p style="font-size:11px;color:var(--gray-400);text-align:center;margin-top:8px;">
+                            You'll be redirected to a secure payment page.
+                        </p>
+
+                        <?php elseif ($my_payment && $my_payment['status'] === 'failed'): ?>
+                        <!-- Failed payment — retry -->
+                        <div style="background:#FEF3C7;border-radius:8px;padding:12px;margin-bottom:12px;text-align:center;">
+                            <span style="color:#92400E;font-weight:600;">⚠️ <?= $t['payment_failed_retry'] ?></span>
+                        </div>
+                        <button class="btn btn-primary btn-full btn-lg" id="retry-payment-btn"
+                                data-group-id="<?= $group_id ?>">
+                            🔄 <?= $t['payment_retry'] ?>
+                        </button>
+
+                        <?php else: ?>
+                        <!-- Payment record not yet generated (should be brief) -->
+                        <div style="background:#F3F4F6;border-radius:8px;padding:12px;text-align:center;">
+                            <span style="color:var(--gray-600);">Preparing your payment link…</span>
+                            <p style="font-size:12px;color:var(--gray-500);margin-top:4px;">Please refresh in a moment.</p>
+                        </div>
+                        <?php endif; ?>
+
+                    <?php elseif ($group['status'] === 'order_ready'): ?>
+                        <?php if ($is_member && in_array($my_status, ['paid'], true)): ?>
+                        <div style="background:#DCFCE7;border-radius:8px;padding:14px;text-align:center;">
+                            <span style="color:#166534;font-weight:700;font-size:15px;">🎉 <?= $t['group_order_ready'] ?></span>
+                            <p style="font-size:12px;color:#16A34A;margin-top:4px;"><?= $t['group_order_ready_desc'] ?></p>
+                            <a href="<?= APP_URL ?>/pages/my-orders.php" style="font-size:13px;color:#15803D;font-weight:600;display:inline-block;margin-top:6px;">View your order →</a>
+                        </div>
                         <?php endif; ?>
 
                     <?php elseif ($group['status'] === 'closed'): ?>
@@ -338,9 +438,13 @@ const MY_STATUS    = '<?= $my_status ?? '' ?>';
 
 <?php
 // PayPal Smart Buttons appear on open groups for non-members (V3 authorize-on-join flow).
-$paypal_configured = defined('PAYPAL_CLIENT_ID') && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false && PAYPAL_CLIENT_ID !== '';
+// Skip entirely when the hosted payment mode is active.
+$paypal_configured = !$hosted_payment_mode
+    && defined('PAYPAL_CLIENT_ID')
+    && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false
+    && PAYPAL_CLIENT_ID !== '';
 ?>
-<?php if (!$is_member && $group['status'] === 'open' && is_logged_in()): ?>
+<?php if (!$is_member && $group['status'] === 'open' && is_logged_in() && !$hosted_payment_mode): ?>
 <?php if ($paypal_configured): ?>
 // PayPal SDK — Smart Buttons for join (authorize, not capture)
 const script = document.createElement('script');
@@ -394,6 +498,33 @@ if (chatMsgs) chatMsgs.scrollTop = chatMsgs.scrollHeight;
     }
     fmt(deadline - Date.now());
     setInterval(() => fmt(deadline - Date.now()), 1000);
+})();
+
+// ── Retry failed payment ──────────────────────────────────
+(function() {
+    const retryBtn = document.getElementById('retry-payment-btn');
+    if (!retryBtn) return;
+    retryBtn.addEventListener('click', async function() {
+        retryBtn.disabled = true;
+        retryBtn.textContent = 'Generating link…';
+        try {
+            const res  = await fetch('<?= APP_URL ?>/api/payments.php?action=retry&group_id=<?= $group_id ?>', { method: 'POST', credentials: 'same-origin' });
+            const data = await res.json();
+            if (data.payment_url) {
+                window.location.href = data.payment_url;
+            } else if (data.already_paid) {
+                location.reload();
+            } else {
+                alert(data.error || 'Could not generate a payment link. Please try again later.');
+                retryBtn.disabled = false;
+                retryBtn.textContent = '🔄 Retry Payment';
+            }
+        } catch (e) {
+            alert('Network error. Please try again.');
+            retryBtn.disabled = false;
+            retryBtn.textContent = '🔄 Retry Payment';
+        }
+    });
 })();
 
 // Live participant count polling (every 15s)

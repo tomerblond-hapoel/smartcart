@@ -102,6 +102,15 @@ return [
     'group_target_members' => 'Target Members',
     'group_deadline_label' => 'Group Deadline',
     'group_create_btn'     => 'Create Group',
+    // Hosted payment flow statuses
+    'group_ready_for_payment'      => 'Payment Required',
+    'group_ready_for_payment_desc' => 'Your group is full! Click "Pay Now" below to secure your spot.',
+    'group_order_ready'            => 'Order Confirmed',
+    'group_order_ready_desc'       => 'All members have paid. Your order is being prepared.',
+    'payment_pending'              => 'Awaiting payment',
+    'payment_paid'                 => 'Payment confirmed ✓',
+    'payment_failed_retry'         => 'Your last payment attempt failed. Please retry.',
+    'payment_retry'                => 'Retry Payment',
 
     // Agent
     'agent_title'       => 'Smart Agent',

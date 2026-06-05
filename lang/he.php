@@ -102,6 +102,15 @@ return [
     'group_target_members' => 'יעד משתתפים',
     'group_deadline_label' => 'תאריך סיום הקבוצה',
     'group_create_btn'     => 'צור קבוצה',
+    // תהליך תשלום מתארח
+    'group_ready_for_payment'      => 'נדרש תשלום',
+    'group_ready_for_payment_desc' => 'הקבוצה מלאה! לחץ על "שלם עכשיו" להשלמת הרכישה.',
+    'group_order_ready'            => 'ההזמנה אושרה',
+    'group_order_ready_desc'       => 'כל החברים שילמו. ההזמנה שלך בהכנה.',
+    'payment_pending'              => 'ממתין לתשלום',
+    'payment_paid'                 => 'תשלום אושר ✓',
+    'payment_failed_retry'         => 'ניסיון התשלום האחרון נכשל. אנא נסה שוב.',
+    'payment_retry'                => 'נסה תשלום שוב',
 
     // סוכן חכם
     'agent_title'       => 'הסוכן החכם',
