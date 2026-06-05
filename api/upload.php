@@ -56,6 +56,10 @@ if (!move_uploaded_file($f['tmp_name'], $path)) {
     json_response(['error' => 'Failed to save file'], 500);
 }
 
+// cPanel shared hosting creates files as 0600 (owner-only).
+// Set to 0644 so Apache can read and serve the image.
+@chmod($path, 0644);
+
 json_response([
     'success' => true,
     'url'     => APP_URL . '/uploads/' . $subdir . '/' . $name,

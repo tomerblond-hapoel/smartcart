@@ -1,27 +1,53 @@
 <?php
 /**
- * One-time migration: fix double-URL image_url values in the products table.
- * PHP 7.4 compatible — no str_starts_with().
+ * One-time maintenance script — run after deploying, then keep or delete.
+ * PHP 7.4 compatible.
  *
- * Problem: APP_URL was prepended to an already-absolute URL, producing:
- *   https://noati2.mtacloud.co.il/smartcarthttps://noati2.mtacloud.co.il/smartcart/uploads/...
+ * Does two things:
  *
- * Fix: strip the first duplicate APP_URL prefix.
- * Run once, then you can delete this file.
+ * 1. FILE PERMISSIONS — chmod all uploaded images to 0644 so Apache can serve them.
+ *    On cPanel, PHP's move_uploaded_file() often creates files as 0600 (owner-only),
+ *    which makes Apache return 403 Forbidden when a browser requests the image.
  *
- * Usage: visit https://yoursite/smartcart/scripts/fix_image_urls.php
- *         OR:  php scripts/fix_image_urls.php
+ * 2. DB CLEANUP — fixes any double-URL values saved in products.image_url:
+ *    https://noati2.mtacloud.co.il/smartcarthttps://noati2.mtacloud.co.il/smartcart/...
+ *    → https://noati2.mtacloud.co.il/smartcart/...
+ *
+ * Usage: visit https://noati2.mtacloud.co.il/smartcart/scripts/fix_image_urls.php
  */
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 
+// ── 1. Fix file permissions ───────────────────────────────
+$uploads_root = __DIR__ . '/../uploads';
+$subdirs      = ['products', 'logos'];
+$chmod_fixed  = 0;
+$chmod_failed = 0;
+
+foreach ($subdirs as $sub) {
+    $dir = $uploads_root . '/' . $sub;
+    if (!is_dir($dir)) continue;
+    foreach (glob($dir . '/*') as $file) {
+        if (!is_file($file)) continue;
+        if (substr($file, -8) === '.gitkeep') continue;  // skip placeholder
+        if (@chmod($file, 0644)) {
+            $chmod_fixed++;
+        } else {
+            $chmod_failed++;
+            echo "WARNING: could not chmod {$file}\n";
+        }
+    }
+}
+echo "File permissions: set 0644 on {$chmod_fixed} file(s)";
+if ($chmod_failed) echo " ({$chmod_failed} failed)";
+echo ".\n";
+
+// ── 2. Fix double-URL in DB ───────────────────────────────
 $pdo  = getPDO();
-$base = rtrim(APP_URL, '/');   // e.g. https://noati2.mtacloud.co.il/smartcart
+$base = rtrim(APP_URL, '/');
 $skip = strlen($base);
 
-// Only update rows whose image_url starts with APP_URL immediately followed by
-// another absolute URL — the signature of the double-prepend bug.
 $stmt = $pdo->prepare("
     UPDATE products
     SET    image_url = SUBSTRING(image_url, :skip + 1)
@@ -33,10 +59,10 @@ $stmt->execute([
     ':p_https' => $base . 'https://%',
     ':p_http'  => $base . 'http://%',
 ]);
-$fixed = $stmt->rowCount();
-echo "products: fixed {$fixed} broken image_url(s).\n";
+$db_fixed = $stmt->rowCount();
+echo "DB cleanup: fixed {$db_fixed} broken image_url(s).\n";
 
-// Verify no broken rows remain
+// Verify
 $check = $pdo->prepare("
     SELECT id, image_url FROM products
     WHERE  image_url LIKE :p1 OR image_url LIKE :p2
@@ -51,3 +77,5 @@ if ($remaining) {
 } else {
     echo "All image URLs look clean.\n";
 }
+
+echo "\nDone. You can delete this file now.\n";
