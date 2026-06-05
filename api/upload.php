@@ -56,10 +56,14 @@ if (!move_uploaded_file($f['tmp_name'], $path)) {
     json_response(['error' => 'Failed to save file'], 500);
 }
 
+// Return the relative path only — prevents double APP_URL if this URL gets
+// saved to the DB and later displayed via img_url() which prepends APP_URL.
+$relative = '/uploads/' . $subdir . '/' . $name;
 json_response([
-    'success' => true,
-    'url'     => APP_URL . '/uploads/' . $subdir . '/' . $name,
-    'name'    => $name,
-    'width'   => $info[0] ?? null,
-    'height'  => $info[1] ?? null,
+    'success'     => true,
+    'url'         => $relative,                  // relative path — store this in DB
+    'preview_url' => APP_URL . $relative,        // absolute URL — for <img src> preview only
+    'name'        => $name,
+    'width'       => $info[0] ?? null,
+    'height'      => $info[1] ?? null,
 ]);
