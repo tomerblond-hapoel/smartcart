@@ -13,43 +13,6 @@ require_once __DIR__ . '/../includes/functions.php';
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 
-/**
- * Normalize an image URL before it is saved to the database.
- *
- * Rules (in order):
- *  1. Blank → return ''
- *  2. Looks like APP_URL was prepended to an already-absolute URL
- *     (the "double URL" bug: "https://…/smartcarthttps://…") → strip the prefix
- *  3. Absolute URL (http/https) → keep as-is
- *  4. Relative path starting with / (e.g. /uploads/products/file.jpg) → prepend APP_URL once
- *  5. Bare filename → build full uploads path
- */
-function sanitize_image_url(string $url): string {
-    $url  = trim($url);
-    if (!$url) return '';
-
-    $base = rtrim(APP_URL, '/');   // e.g. https://noati2.mtacloud.co.il/smartcart
-
-    // Case 2: double-URL bug — APP_URL prepended to a full URL
-    // e.g. "https://…/smartcarthttps://…" or "https://…/smartcarthttp://…"
-    if (str_starts_with($url, $base . 'https://') || str_starts_with($url, $base . 'http://')) {
-        $url = substr($url, strlen($base)); // strip the leading copy of APP_URL
-    }
-
-    // Case 3: already a proper absolute URL
-    if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-        return $url;
-    }
-
-    // Case 4: relative path (starts with /)
-    if (str_starts_with($url, '/')) {
-        return $base . $url;
-    }
-
-    // Case 5: bare filename — assume it lives under /uploads/products/
-    return $base . '/uploads/products/' . $url;
-}
-
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -189,7 +152,7 @@ function create_product(): void {
     $gprice   = (float)($body['group_price_ils'] ?? 0);
     $category = trim($body['category']    ?? 'other');
     $min_p    = max(2, (int)($body['min_participants'] ?? 2));
-    $image    = sanitize_image_url($body['image_url'] ?? '');
+    $image    = trim($body['image_url']   ?? '');
     $city     = trim($body['city']        ?? '');
     $lat      = isset($body['lat']) && $body['lat'] !== '' ? (float)$body['lat'] : null;
     $lng      = isset($body['lng']) && $body['lng'] !== '' ? (float)$body['lng'] : null;
@@ -266,7 +229,7 @@ function update_product(int $id): void {
     $gprice = (float)($body['group_price_ils'] ?? 0);
     $cat    = trim($body['category']    ?? 'other');
     $min_p  = max(2, (int)($body['min_participants'] ?? 2));
-    $image  = sanitize_image_url($body['image_url'] ?? '');
+    $image  = trim($body['image_url']   ?? '');
     $city   = trim($body['city']        ?? '');
     $lat    = isset($body['lat']) && $body['lat'] !== '' ? (float)$body['lat'] : null;
     $lng    = isset($body['lng']) && $body['lng'] !== '' ? (float)$body['lng'] : null;

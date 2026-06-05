@@ -53,7 +53,7 @@ include __DIR__ . '/../includes/header.php';
             <div class="card-body">
                 <div style="display:flex;gap:16px;margin-bottom:20px;">
                     <?php if ($o['image_url']): ?>
-                    <img src="<?= img_url($o['image_url']) ?>" style="width:80px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;">
+                    <img src="<?= APP_URL . htmlspecialchars($o['image_url']) ?>" style="width:80px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;">
                     <?php endif; ?>
                     <div style="flex:1;">
                         <h3 style="font-size:16px;font-weight:600;margin-bottom:4px;"><?= htmlspecialchars($o['product_name']) ?></h3>

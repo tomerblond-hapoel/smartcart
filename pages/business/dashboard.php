@@ -153,7 +153,7 @@ include __DIR__ . '/../../includes/header.php';
             <div class="deal-card" style="background:white;border:<?= $urgent ? '2px solid var(--danger)' : '1px solid var(--border)' ?>;border-radius:16px;overflow:hidden;box-shadow:var(--shadow);">
                 <!-- Image -->
                 <?php if ($d['image_url']): ?>
-                <div style="height:160px;background:url('<?= img_url($d['image_url']) ?>') center/cover no-repeat;position:relative;">
+                <div style="height:160px;background:url('<?= htmlspecialchars($d['image_url']) ?>') center/cover no-repeat;position:relative;">
                 <?php else: ?>
                 <div style="height:160px;background:var(--purple-50);display:flex;align-items:center;justify-content:center;font-size:56px;position:relative;">
                     <?= $cat_icons[$d['category']] ?? '📦' ?>
@@ -609,8 +609,7 @@ if (dfFile) {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Upload failed');
             dfImg.value = data.url;
-            // data.url is a relative path; use preview_url (absolute) for the <img> tag
-            dfPreview.src = data.preview_url || ('<?= APP_URL ?>' + data.url);
+            dfPreview.src = data.url;
             dfPreview.style.display = 'block';
             SmartCart.showToast('Image uploaded.');
         } catch (err) {

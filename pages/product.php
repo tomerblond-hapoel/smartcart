@@ -65,7 +65,7 @@ include __DIR__ . '/../includes/header.php';
         <!-- Image -->
         <div>
             <?php if ($product['image_url']): ?>
-            <img src="<?= img_url($product['image_url']) ?>" alt="<?= htmlspecialchars($product['name']) ?>"
+            <img src="<?= APP_URL . htmlspecialchars($product['image_url']) ?>" alt="<?= htmlspecialchars($product['name']) ?>"
                  style="width:100%;border-radius:var(--radius);max-height:420px;object-fit:cover;">
             <?php else: ?>
             <div style="width:100%;height:300px;background:var(--teal-50);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:80px;">

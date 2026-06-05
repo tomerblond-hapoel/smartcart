@@ -102,7 +102,7 @@ include __DIR__ . '/../includes/header.php';
         <div>
             <!-- Product Image -->
             <?php if ($group['product_image']): ?>
-            <img src="<?= img_url($group['product_image']) ?>"
+            <img src="<?= APP_URL . htmlspecialchars($group['product_image']) ?>"
                  alt="<?= htmlspecialchars($group['product_name']) ?>"
                  style="width:100%;height:280px;object-fit:cover;border-radius:var(--radius);margin-bottom:20px;">
             <?php else: ?>
