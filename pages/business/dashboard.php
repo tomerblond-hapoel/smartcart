@@ -46,7 +46,7 @@ $deals_stmt = $pdo->prepare("
     LEFT JOIN group_purchases gp ON gp.id = (
         SELECT id FROM group_purchases WHERE product_id = p.id ORDER BY created_at DESC LIMIT 1
     )
-    WHERE p.business_id = ?
+    WHERE p.business_id = ? AND p.status = 'active'
     ORDER BY
         CASE WHEN gp.status = 'open' THEN 0 WHEN gp.status = 'closed' THEN 1 ELSE 2 END,
         gp.deadline ASC,

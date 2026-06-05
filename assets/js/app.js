@@ -237,7 +237,7 @@ document.addEventListener('click', async function(e) {
             // Clicked from inside modal — close it and reload
             document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
             showToast('Product deleted.');
-            setTimeout(() => location.reload(), 900);
+            setTimeout(() => location.reload(), 500);
         }
     } catch (err) {
         showToast(err.message, 'error');
