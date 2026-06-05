@@ -5,3 +5,8 @@ deployment:
     - /bin/mkdir -p $DEPLOYPATH
     - /bin/cp -R * $DEPLOYPATH/
     - /bin/cp .htaccess $DEPLOYPATH/
+    - /bin/mkdir -p $DEPLOYPATH/uploads/products
+    - /bin/mkdir -p $DEPLOYPATH/uploads/logos
+    - /bin/chmod 755 $DEPLOYPATH/uploads
+    - /bin/chmod 755 $DEPLOYPATH/uploads/products
+    - /bin/chmod 755 $DEPLOYPATH/uploads/logos

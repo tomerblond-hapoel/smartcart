@@ -480,6 +480,13 @@ function md(t) {
         .replace(/\*(.+?)\*/g,'<em>$1</em>')
         .replace(/\n/g,'<br>');
 }
+/* Returns a safe image src whether the DB stores a full URL or a relative path */
+function imgSrc(url) {
+    if (!url) return '';
+    return (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//'))
+        ? url
+        : SC_APP_URL + url;
+}
 function catEmoji(c) {
     return {electronics:'💻',home:'🏠',fashion:'👗',food:'🍎',sports:'⚽',beauty:'💄',toys:'🧸',books:'📚',automotive:'🚗'}[c] || '📦';
 }
@@ -539,7 +546,7 @@ function renderCards(results) {
     const items = results.slice(0, 5).map(r => {
         const fillColor = r.fill_percent >= 75 ? 'var(--green)' : r.fill_percent >= 40 ? 'var(--orange)' : 'var(--primary)';
         const img = r.product_image
-            ? `<img class="sc-card-img" src="${SC_APP_URL}${esc(r.product_image)}" alt="${esc(r.product_name)}" loading="lazy">`
+            ? `<img class="sc-card-img" src="${imgSrc(r.product_image)}" alt="${esc(r.product_name)}" loading="lazy">`
             : `<div class="sc-card-img-placeholder">${catEmoji(r.category)}</div>`;
         return `
         <div class="sc-card">
@@ -576,7 +583,7 @@ function renderSuggestedProducts(products) {
         return `
         <div class="sc-card">
             ${p.product_image
-                ? `<img class="sc-card-img" src="${SC_APP_URL}${esc(p.product_image)}" alt="${esc(p.product_name)}" loading="lazy">`
+                ? `<img class="sc-card-img" src="${imgSrc(p.product_image)}" alt="${esc(p.product_name)}" loading="lazy">`
                 : `<div class="sc-card-img-placeholder">${catEmoji(p.category)}</div>`}
             <div class="sc-card-body">
                 <div class="sc-card-title">${esc(p.product_name)}</div>

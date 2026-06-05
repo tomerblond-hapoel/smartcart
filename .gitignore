@@ -1,0 +1,14 @@
+# Uploaded files — keep folder structure, ignore contents
+uploads/products/*
+uploads/logos/*
+!uploads/products/.gitkeep
+!uploads/logos/.gitkeep
+
+# Environment / config overrides
+config/config.local.php
+.env
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
