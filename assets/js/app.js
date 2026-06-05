@@ -229,8 +229,16 @@ document.addEventListener('click', async function(e) {
     const id = btn.dataset.id;
     try {
         await api(`/api/products.php?action=delete&id=${id}`, { method: 'DELETE' });
-        btn.closest('.deal-card, tr')?.remove();
-        showToast('Product deleted.');
+        const card = btn.closest('.deal-card, tr');
+        if (card) {
+            card.remove();
+            showToast('Product deleted.');
+        } else {
+            // Clicked from inside modal — close it and reload
+            document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+            showToast('Product deleted.');
+            setTimeout(() => location.reload(), 900);
+        }
     } catch (err) {
         showToast(err.message, 'error');
     }

@@ -493,6 +493,18 @@ include __DIR__ . '/../../includes/header.php';
                 <button type="submit" class="btn btn-primary" style="flex:1;" id="deal-submit-btn">Create Deal</button>
                 <button type="button" class="btn btn-ghost" onclick="closeDealModal()">Cancel</button>
             </div>
+
+            <!-- Delete — only shown when editing an existing product -->
+            <div id="deal-delete-wrap" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+                <button type="button"
+                        id="deal-delete-btn"
+                        data-action="delete-product"
+                        data-id=""
+                        class="btn btn-full"
+                        style="background:transparent;color:var(--danger);border:1.5px solid var(--danger);font-weight:600;">
+                    🗑 Delete this product
+                </button>
+            </div>
         </form>
     </div>
 </div>
@@ -568,6 +580,7 @@ function openDealModal() {
     document.getElementById('deal-product-id').value = '';
     document.getElementById('deal-form').reset();
     document.getElementById('deal-submit-btn').textContent = 'Create Deal';
+    document.getElementById('deal-delete-wrap').style.display = 'none';
     // Set default deadline to +30 days
     const dt = new Date(Date.now() + 30 * 86400 * 1000);
     dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
@@ -595,6 +608,9 @@ function editDeal(d) {
         document.getElementById('df-deadline').value = dt.toISOString().slice(0,16);
     }
     document.getElementById('deal-submit-btn').textContent = 'Save Changes';
+    // Show delete button when editing an existing product
+    document.getElementById('deal-delete-btn').dataset.id = d.product_id;
+    document.getElementById('deal-delete-wrap').style.display = 'block';
     document.getElementById('deal-modal').classList.add('open');
     updateDiscount();
 }
@@ -604,6 +620,7 @@ function relaunchDeal(d) {
     document.getElementById('deal-product-id').value = '';
     document.getElementById('deal-modal-title').textContent = 'Relaunch Deal';
     document.getElementById('deal-submit-btn').textContent = 'Relaunch';
+    document.getElementById('deal-delete-wrap').style.display = 'none';
     // Reset deadline to +30 days
     const dt = new Date(Date.now() + 30 * 86400 * 1000);
     dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
