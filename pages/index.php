@@ -186,6 +186,9 @@ include __DIR__ . '/../includes/header.php';
     <div class="container">
         <h2 class="section-title"><?= $t['home_categories'] ?></h2>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <a href="<?= APP_URL ?>/pages/browse.php" class="btn-filter active">
+                <?= $t['filter_all'] ?>
+            </a>
             <?php foreach ($categories as $cat): ?>
             <a href="<?= APP_URL ?>/pages/browse.php?category=<?= $cat ?>" class="btn-filter">
                 <?= $t['cat_' . $cat] ?>
