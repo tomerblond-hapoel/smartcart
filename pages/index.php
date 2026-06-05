@@ -213,7 +213,7 @@ include __DIR__ . '/../includes/header.php';
             ?>
             <div class="urgent-card" style="background:#fff;border:2px solid var(--danger);border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(239,68,68,.2)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="window.location='<?= APP_URL ?>/pages/group.php?id=<?= $g['id'] ?>'">
                 <?php if ($g['image_url']): ?>
-                <div style="width:100%;height:160px;background:url('<?= APP_URL . htmlspecialchars($g['image_url']) ?>') center/cover no-repeat;position:relative;">
+                <div style="width:100%;height:160px;background:url('<?= img_url($g['image_url']) ?>') center/cover no-repeat;position:relative;">
                     <span style="position:absolute;top:8px;left:8px;font-size:11px;font-weight:700;color:#fff;background:var(--danger);padding:3px 10px;border-radius:999px;"><?= $g['disc'] ?>% OFF</span>
                 </div>
                 <?php else: ?>
@@ -263,7 +263,7 @@ include __DIR__ . '/../includes/header.php';
             ?>
             <div style="background:#fff;border:1px solid #e9e9f1;border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(111,82,255,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="window.location='<?= APP_URL ?>/pages/group.php?id=<?= $g['id'] ?>'">
                 <?php if ($g['image_url']): ?>
-                <div style="width:100%;height:180px;background:url('<?= APP_URL . htmlspecialchars($g['image_url']) ?>') center/cover no-repeat;"></div>
+                <div style="width:100%;height:180px;background:url('<?= img_url($g['image_url']) ?>') center/cover no-repeat;"></div>
                 <?php else: ?>
                 <div style="width:100%;height:180px;background:var(--purple-50);display:flex;align-items:center;justify-content:center;"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--purple);opacity:.35"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
                 <?php endif; ?>
