@@ -229,7 +229,7 @@ document.addEventListener('click', async function(e) {
     const id = btn.dataset.id;
     try {
         await api(`/api/products.php?action=delete&id=${id}`, { method: 'DELETE' });
-        btn.closest('tr')?.remove();
+        btn.closest('.deal-card, tr')?.remove();
         showToast('Product deleted.');
     } catch (err) {
         showToast(err.message, 'error');

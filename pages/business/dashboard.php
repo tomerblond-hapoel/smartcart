@@ -125,7 +125,8 @@ include __DIR__ . '/../../includes/header.php';
 <div class="container" style="padding-top:0;padding-bottom:60px;">
     <div class="tabs" style="border-bottom:1px solid var(--border);background:white;margin:0 0 28px;padding:0;border-radius:0 0 0 0;position:sticky;top:var(--nav-height);z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.06);">
         <button class="tab-btn active" data-tab="deals" style="padding:16px 24px;">🏷️ Live Deals <span style="background:var(--purple);color:white;font-size:11px;padding:2px 7px;border-radius:999px;margin-left:6px;font-weight:700;"><?= count($open_deals) ?></span></button>
-        <button class="tab-btn" data-tab="orders" style="padding:16px 24px;">📦 Orders <span style="background:var(--gray-200);color:var(--gray-700);font-size:11px;padding:2px 7px;border-radius:999px;margin-left:6px;font-weight:700;"><?= count($orders) ?></span></button>
+        <button class="tab-btn" data-tab="products" style="padding:16px 24px;">📦 My Products <span style="background:var(--gray-200);color:var(--gray-700);font-size:11px;padding:2px 7px;border-radius:999px;margin-left:6px;font-weight:700;"><?= count($deals) ?></span></button>
+        <button class="tab-btn" data-tab="orders" style="padding:16px 24px;">🧾 Orders <span style="background:var(--gray-200);color:var(--gray-700);font-size:11px;padding:2px 7px;border-radius:999px;margin-left:6px;font-weight:700;"><?= count($orders) ?></span></button>
     </div>
 
     <!-- TAB: LIVE DEALS -->
@@ -241,7 +242,7 @@ include __DIR__ . '/../../includes/header.php';
         <h3 style="font-size:14px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px;">Past Deals</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
             <?php foreach ($other_deals as $d): ?>
-            <div style="background:white;border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px;opacity:.7;">
+            <div class="deal-card" style="background:white;border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px;opacity:.7;">
                 <div style="font-size:24px;"><?= $cat_icons[$d['category']] ?? '📦' ?></div>
                 <div style="flex:1;min-width:0;">
                     <div style="font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= htmlspecialchars($d['product_name']) ?></div>
@@ -255,6 +256,87 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <?php endif; ?>
 
+        <?php endif; ?>
+    </div>
+
+    <!-- TAB: MY PRODUCTS -->
+    <div class="tab-panel" id="tab-products">
+        <?php if (empty($deals)): ?>
+        <div class="empty-state" style="padding:80px 20px;">
+            <div style="font-size:64px;margin-bottom:16px;">📦</div>
+            <h3>No products yet</h3>
+            <p style="color:var(--gray-500);margin-bottom:20px;">Create your first deal to add a product.</p>
+            <button class="btn btn-primary btn-lg" onclick="openDealModal()">+ Add Product</button>
+        </div>
+        <?php else: ?>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <p style="color:var(--gray-500);font-size:14px;"><?= count($deals) ?> product<?= count($deals) !== 1 ? 's' : '' ?> total</p>
+            <button class="btn btn-primary btn-sm" onclick="openDealModal()">+ Add Product</button>
+        </div>
+        <div class="card" style="overflow:hidden;">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:44px;"></th>
+                            <th>Product</th>
+                            <th>Prices</th>
+                            <th>Status</th>
+                            <th style="text-align:right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($deals as $d):
+                        $is_active = ($d['product_status'] ?? 'active') === 'active';
+                        $gs = $d['group_status'] ?? null;
+                        if ($gs === 'open') { $status_label = 'Live'; $status_color = 'var(--green)'; }
+                        elseif ($gs === 'closed' || $gs === 'ready_for_payment') { $status_label = 'Closed'; $status_color = '#1D4ED8'; }
+                        elseif ($gs === 'order_ready') { $status_label = 'Order Ready'; $status_color = 'var(--green)'; }
+                        elseif ($gs === 'failed') { $status_label = 'Failed'; $status_color = 'var(--danger)'; }
+                        elseif (!$is_active) { $status_label = 'Inactive'; $status_color = 'var(--gray-400)'; }
+                        else { $status_label = 'No group'; $status_color = 'var(--gray-400)'; }
+                    ?>
+                    <tr id="product-row-<?= (int)$d['product_id'] ?>">
+                        <td>
+                            <?php if ($d['image_url']): ?>
+                            <img src="<?= img_url($d['image_url']) ?>" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">
+                            <?php else: ?>
+                            <div style="width:40px;height:40px;border-radius:8px;background:var(--purple-50);display:flex;align-items:center;justify-content:center;font-size:20px;"><?= $cat_icons[$d['category']] ?? '📦' ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <div style="font-weight:600;font-size:14px;"><?= htmlspecialchars($d['product_name']) ?></div>
+                            <div style="font-size:11px;color:var(--gray-400);"><?= $cat_icons[$d['category']] ?? '' ?> <?= $t['cat_' . $d['category']] ?> <?= $d['city'] ? '· ' . htmlspecialchars($d['city']) : '' ?></div>
+                        </td>
+                        <td>
+                            <div style="font-weight:700;color:var(--purple);"><?= format_ils($d['group_price_ils']) ?></div>
+                            <div style="font-size:11px;text-decoration:line-through;color:var(--gray-400);"><?= format_ils($d['price_ils']) ?></div>
+                        </td>
+                        <td>
+                            <span style="background:<?= $status_color ?>20;color:<?= $status_color ?>;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;">
+                                <?= $status_label ?>
+                            </span>
+                        </td>
+                        <td style="text-align:right;">
+                            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                                <?php if ($d['group_id']): ?>
+                                <a href="<?= APP_URL ?>/pages/group.php?id=<?= (int)$d['group_id'] ?>" class="btn btn-outline btn-sm">View</a>
+                                <?php endif; ?>
+                                <button class="btn btn-ghost btn-sm" onclick="editDeal(<?= htmlspecialchars(json_encode($d)) ?>)">Edit</button>
+                                <button class="btn btn-sm"
+                                        data-action="delete-product"
+                                        data-id="<?= (int)$d['product_id'] ?>"
+                                        style="background:var(--danger);color:white;border-color:var(--danger);">
+                                    🗑 Delete
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
         <?php endif; ?>
     </div>
 
