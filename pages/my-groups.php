@@ -66,7 +66,7 @@ include __DIR__ . '/../includes/header.php';
             <div class="card">
                 <div class="card-body" style="display:flex;gap:16px;align-items:center;">
                     <?php if ($g['image_url']): ?>
-                    <img src="<?= APP_URL . htmlspecialchars($g['image_url']) ?>" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;">
+                    <img src="<?= img_url($g['image_url']) ?>" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;">
                     <?php endif; ?>
                     <div style="flex:1;">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">

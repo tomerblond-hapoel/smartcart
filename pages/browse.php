@@ -160,7 +160,7 @@ include __DIR__ . '/../includes/header.php';
         <?php foreach ($products as $p): ?>
         <div style="background:#fff;border:1px solid #e9e9f1;border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(111,82,255,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="window.location='<?= APP_URL ?>/pages/product.php?id=<?= $p['id'] ?>'">
             <?php if ($p['image_url']): ?>
-            <div style="width:100%;height:180px;background:url('<?= APP_URL . htmlspecialchars($p['image_url']) ?>') center/cover no-repeat;position:relative;">
+            <div style="width:100%;height:180px;background:url('<?= img_url($p['image_url']) ?>') center/cover no-repeat;position:relative;">
                 <span style="position:absolute;top:10px;right:10px;font-size:11px;font-weight:700;color:var(--green);background:rgba(26,199,133,.12);padding:3px 10px;border-radius:999px;"><?= $p['disc'] ?>% off</span>
             </div>
             <?php else: ?>

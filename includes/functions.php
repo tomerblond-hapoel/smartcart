@@ -143,6 +143,20 @@ function geocode_address(string $query): ?array {
 }
 
 /**
+ * Safe image URL helper.
+ * If the stored value is already an absolute URL (starts with http/https//)
+ * return it as-is. Otherwise prepend APP_URL so relative paths still work.
+ * Always HTML-encodes the result ready for use in src= or url() attributes.
+ */
+function img_url(?string $url): string {
+    if (!$url) return '';
+    $abs = str_starts_with($url, 'http://') ||
+           str_starts_with($url, 'https://') ||
+           str_starts_with($url, '//');
+    return htmlspecialchars($abs ? $url : APP_URL . $url, ENT_QUOTES, 'UTF-8');
+}
+
+/**
  * Back-compat alias: city-level geocode.
  */
 function geocode_city(string $city): ?array {
