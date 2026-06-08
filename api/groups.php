@@ -21,7 +21,7 @@ require_once __DIR__ . '/../includes/notifications.php';
 // legacy PayPal authorize-on-join flow stays in effect.
 function is_hosted_payment_mode(): bool {
     $p = defined('PAYMENT_PROVIDER') ? strtolower(trim(PAYMENT_PROVIDER)) : '';
-    return $p !== '' && $p !== 'paypal';
+    return $p !== '';
 }
 
 session_start();
@@ -729,9 +729,13 @@ function hosted_join_group(int $group_id): void {
 
         $newly_filled = false;
         if ($new_count >= $target) {
-            // Group is full → transition to ready_for_payment
-            $pdo->prepare("UPDATE group_purchases SET status = 'ready_for_payment' WHERE id = ?")
-                ->execute([$group_id]);
+            // Group is full → transition to ready_for_payment, set 24-hour payment window
+            $pdo->prepare("
+                UPDATE group_purchases
+                SET status = 'ready_for_payment',
+                    payment_deadline = DATE_ADD(NOW(), INTERVAL 24 HOUR)
+                WHERE id = ?
+            ")->execute([$group_id]);
             $newly_filled = true;
         }
 

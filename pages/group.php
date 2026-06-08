@@ -132,10 +132,8 @@ if (in_array($group['status'], ['ready_for_payment', 'order_ready'], true)) {
 $total_member_count = count($members);
 $total_expected     = $total_member_count * (float)$group['group_price_ils'];
 
-// Detect which join-flow the server is running so the UI can show the right button
-$hosted_payment_mode = defined('PAYMENT_PROVIDER')
-    && PAYMENT_PROVIDER !== ''
-    && PAYMENT_PROVIDER !== 'paypal';
+// All providers (including paypal) now use free-join; payment happens after group fills.
+$hosted_payment_mode = defined('PAYMENT_PROVIDER') && PAYMENT_PROVIDER !== '';
 $cat_icons  = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
 
 $page_title = $group['product_name'];
@@ -284,31 +282,15 @@ include __DIR__ . '/../includes/header.php';
                         </a>
 
                         <?php elseif (!$is_member): ?>
-                            <?php if ($hosted_payment_mode): ?>
-                            <!-- Hosted payment flow: simple join, pay later -->
+                            <!-- Free join — payment requested after group fills -->
                             <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;text-align:center;">
-                                Join for free — you'll be asked to pay once the group reaches its target.
+                                Join for free — you'll be asked to pay via PayPal once the group reaches its target.
                             </p>
                             <button class="btn btn-primary btn-full btn-lg"
                                     data-action="join-group"
                                     data-group-id="<?= $group_id ?>">
                                 <?= $t['group_join'] ?>
                             </button>
-                            <?php else: ?>
-                            <!-- Legacy PayPal flow -->
-                            <p style="font-size:12px;color:var(--gray-500);margin-bottom:10px;text-align:center;">
-                                <?php $paypal_live = defined('PAYPAL_CLIENT_ID') && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false && PAYPAL_CLIENT_ID !== ''; ?>
-                                <?php if ($paypal_live): ?>
-                                    Click below to commit. We hold your payment via PayPal — you're only charged once the group succeeds.
-                                <?php else: ?>
-                                    Click below to join. Your spot is reserved instantly — payment is captured only when the group reaches its target.
-                                <?php endif; ?>
-                            </p>
-                            <div id="paypal-button-container"></div>
-                            <button id="dev-join-btn" class="btn btn-primary btn-full btn-lg" data-action="join-group" data-group-id="<?= $group_id ?>" style="display:none;">
-                                <?= $t['group_join'] ?>
-                            </button>
-                            <?php endif; ?>
 
                         <?php else: /* already a member */ ?>
                         <div style="background:var(--primary-50);border-radius:8px;padding:12px;text-align:center;margin-bottom:12px;">
@@ -537,46 +519,6 @@ const MY_STATUS    = '<?= $my_status ?? '' ?>';
     SmartCartMaps.addMarker(map, BIZ_LAT, BIZ_LNG, <?= json_encode('<strong>' . htmlspecialchars($group['business_name']) . '</strong><br>' . htmlspecialchars($group['biz_address'] ?? $group['biz_city'] ?? '')) ?>);
 })();
 
-<?php
-// PayPal Smart Buttons appear on open groups for non-members (V3 authorize-on-join flow).
-// Skip entirely when the hosted payment mode is active.
-$paypal_configured = !$hosted_payment_mode
-    && defined('PAYPAL_CLIENT_ID')
-    && strpos(PAYPAL_CLIENT_ID, 'your_paypal') === false
-    && PAYPAL_CLIENT_ID !== '';
-?>
-<?php if (!$is_member && $group['status'] === 'open' && is_logged_in() && !$hosted_payment_mode): ?>
-<?php if ($paypal_configured): ?>
-// PayPal SDK — Smart Buttons for join (authorize, not capture)
-const script = document.createElement('script');
-script.src = 'https://www.paypal.com/sdk/js?client-id=<?= htmlspecialchars(PAYPAL_CLIENT_ID) ?>&currency=USD&intent=authorize';
-script.onload = () => {
-    paypal.Buttons({
-        createOrder: async () => {
-            const res = await SmartCart.api('<?= APP_URL ?>/api/groups.php?action=create_join_order&group_id=' + GROUP_ID, {
-                method: 'POST', body: '{}',
-            });
-            return res.order_id;
-        },
-        onApprove: async (data) => {
-            await SmartCart.api('<?= APP_URL ?>/api/groups.php?action=complete_join&group_id=' + GROUP_ID, {
-                method: 'POST', body: JSON.stringify({ order_id: data.orderID }),
-            });
-            SmartCart.showToast('Joined! Payment authorized (you’ll be charged when group succeeds).');
-            setTimeout(() => location.reload(), 1200);
-        },
-        onCancel: () => SmartCart.showToast('Join cancelled.', 'error'),
-        onError: (err) => SmartCart.showToast('Payment error: ' + err.message, 'error'),
-    }).render('#paypal-button-container');
-};
-document.head.appendChild(script);
-<?php else: ?>
-// Dev mode (no PayPal credentials): show a plain Join button. The server-side
-// flow creates a DEV authorization record so the lifecycle still works end-to-end.
-document.getElementById('dev-join-btn').style.display = 'block';
-document.getElementById('paypal-button-container').style.display = 'none';
-<?php endif; ?>
-<?php endif; ?>
 
 // Scroll chat to bottom
 const chatMsgs = document.querySelector('.chat-messages');

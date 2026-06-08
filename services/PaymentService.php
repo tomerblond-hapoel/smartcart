@@ -48,6 +48,8 @@ class PaymentService
         $provider = defined('PAYMENT_PROVIDER') ? strtolower(trim(PAYMENT_PROVIDER)) : 'mock';
 
         switch ($provider) {
+            case 'paypal':
+                return self::createPaypalLink($payment);
             case 'payme':
                 return self::createPaymeLink($payment);
             case 'meshulam':
@@ -88,7 +90,77 @@ class PaymentService
     public static function isHostedMode(): bool
     {
         $p = defined('PAYMENT_PROVIDER') ? strtolower(trim(PAYMENT_PROVIDER)) : '';
-        return $p !== '' && $p !== 'paypal';
+        return $p !== '';
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // PAYPAL — hosted-pay-after-fill flow
+    //
+    // Creates a CAPTURE order and returns the approve URL.
+    // After user approves, PayPal redirects to api/payments/paypal_return.php
+    // which captures the payment and updates the DB.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private static function createPaypalLink(array $payment): array
+    {
+        require_once __DIR__ . '/../includes/paypal.php';
+
+        $base        = defined('APP_URL') ? rtrim(APP_URL, '/') : '';
+        $return_url  = $base . '/api/payments/paypal_return.php?payment_id=' . $payment['id'];
+        $cancel_url  = $base . '/pages/group.php?id=' . $payment['group_id'] . '&pay_cancelled=1';
+
+        $token = paypal_token();
+        if (!$token) return ['ok' => false, 'error' => 'PayPal auth failed'];
+
+        $amount_usd = round((float)$payment['amount'] / (defined('ILS_TO_USD_RATE') ? ILS_TO_USD_RATE : 3.7), 2);
+
+        $payload = json_encode([
+            'intent' => 'CAPTURE',
+            'purchase_units' => [[
+                'amount' => [
+                    'currency_code' => 'USD',
+                    'value'         => number_format($amount_usd, 2, '.', ''),
+                ],
+                'description' => mb_substr($payment['description'] ?? 'SmartCart Purchase', 0, 127),
+                'custom_id'   => 'payment_' . $payment['id'],
+            ]],
+            'application_context' => [
+                'brand_name'          => 'SmartCart',
+                'user_action'         => 'PAY_NOW',
+                'return_url'          => $return_url,
+                'cancel_url'          => $cancel_url,
+                'shipping_preference' => 'NO_SHIPPING',
+            ],
+        ]);
+
+        $ch = curl_init(PAYPAL_BASE_URL . '/v2/checkout/orders');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $resp = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $data = json_decode($resp, true);
+        if ($code !== 201 || empty($data['id'])) {
+            self::log('paypal_create_order_failed', ['code' => $code, 'resp' => substr($resp, 0, 500)]);
+            return ['ok' => false, 'error' => 'PayPal create order failed (HTTP ' . $code . ')'];
+        }
+
+        $approve_url = '';
+        foreach ($data['links'] ?? [] as $link) {
+            if (($link['rel'] ?? '') === 'approve') { $approve_url = $link['href']; break; }
+        }
+
+        return [
+            'ok'             => true,
+            'payment_url'    => $approve_url,
+            'transaction_id' => $data['id'],
+        ];
     }
 
     // ──────────────────────────────────────────────────────────────────────────
