@@ -9,10 +9,8 @@ define('APP_ENV', 'production');
 define('APP_URL', 'https://noati2.mtacloud.co.il/smartcart');
 define('APP_NAME', 'SmartCart');
 
-define('PAYPAL_CLIENT_ID', $_ENV['PAYPAL_CLIENT_ID'] ?? getenv('PAYPAL_CLIENT_ID') ?: '');
-define('PAYPAL_SECRET',    $_ENV['PAYPAL_SECRET']    ?? getenv('PAYPAL_SECRET')    ?: '');
-define('PAYPAL_BASE_URL',  'https://api-m.sandbox.paypal.com');
-define('PAYPAL_CURRENCY',  'ILS');
+define('PAYPAL_BASE_URL', 'https://api-m.sandbox.paypal.com');
+define('PAYPAL_CURRENCY', 'ILS');
 
 define('GMAPS_API_KEY', 'your_google_maps_api_key');
 
@@ -42,6 +40,10 @@ define('SESSION_LIFETIME', 60 * 60 * 24 * 7);
         }
     }
 })();
+
+// ── PayPal credentials (loaded after .env so .env values take effect) ─────────
+define('PAYPAL_CLIENT_ID', $_ENV['PAYPAL_CLIENT_ID'] ?? getenv('PAYPAL_CLIENT_ID') ?: '');
+define('PAYPAL_SECRET',    $_ENV['PAYPAL_SECRET']    ?? getenv('PAYPAL_SECRET')    ?: '');
 
 // ── Payment provider constants ────────────────────────────────────────────────
 // Reads from .env first, falls back to the defaults listed here.
