@@ -9,10 +9,10 @@ define('APP_ENV', 'production');
 define('APP_URL', 'https://noati2.mtacloud.co.il/smartcart');
 define('APP_NAME', 'SmartCart');
 
-define('PAYPAL_CLIENT_ID', 'your_paypal_sandbox_client_id');
-define('PAYPAL_SECRET', 'your_paypal_sandbox_secret');
-define('PAYPAL_BASE_URL', 'https://api-m.sandbox.paypal.com');
-define('PAYPAL_CURRENCY', 'ILS');
+define('PAYPAL_CLIENT_ID', $_ENV['PAYPAL_CLIENT_ID'] ?? getenv('PAYPAL_CLIENT_ID') ?: '');
+define('PAYPAL_SECRET',    $_ENV['PAYPAL_SECRET']    ?? getenv('PAYPAL_SECRET')    ?: '');
+define('PAYPAL_BASE_URL',  'https://api-m.sandbox.paypal.com');
+define('PAYPAL_CURRENCY',  'ILS');
 
 define('GMAPS_API_KEY', 'your_google_maps_api_key');
 
@@ -46,7 +46,7 @@ define('SESSION_LIFETIME', 60 * 60 * 24 * 7);
 // ── Payment provider constants ────────────────────────────────────────────────
 // Reads from .env first, falls back to the defaults listed here.
 // Set PAYMENT_PROVIDER=payme or meshulam in .env for live payments.
-define('PAYMENT_PROVIDER',       $_ENV['PAYMENT_PROVIDER']       ?? getenv('PAYMENT_PROVIDER')       ?: 'mock');
+define('PAYMENT_PROVIDER',       $_ENV['PAYMENT_PROVIDER']       ?? getenv('PAYMENT_PROVIDER')       ?: 'paypal');
 define('PAYMENT_API_KEY',        $_ENV['PAYMENT_API_KEY']        ?? getenv('PAYMENT_API_KEY')        ?: '');
 define('PAYMENT_SECRET',         $_ENV['PAYMENT_SECRET']         ?? getenv('PAYMENT_SECRET')         ?: '');
 define('PAYMENT_WEBHOOK_SECRET', $_ENV['PAYMENT_WEBHOOK_SECRET'] ?? getenv('PAYMENT_WEBHOOK_SECRET') ?: 'dev_secret_change_me');
