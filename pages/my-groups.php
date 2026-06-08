@@ -27,7 +27,7 @@ $stmt->execute([$user_id]);
 $all_groups = $stmt->fetchAll();
 
 $active   = array_filter($all_groups, fn($g) => $g['status'] === 'open' && $g['member_status'] === 'joined');
-$awaiting = array_filter($all_groups, fn($g) => $g['status'] === 'closed' && $g['member_status'] === 'joined');
+$awaiting = array_filter($all_groups, fn($g) => in_array($g['status'], ['closed', 'ready_for_payment', 'order_ready']) && $g['member_status'] === 'joined');
 $completed= array_filter($all_groups, fn($g) => $g['member_status'] === 'paid');
 $failed   = array_filter($all_groups, fn($g) => $g['status'] === 'failed');
 
