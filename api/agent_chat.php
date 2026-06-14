@@ -66,11 +66,13 @@ $group_ids  = $groq_res['group_ids'] ?? [];
 $prod_ids   = $groq_res['product_ids'] ?? [];
 
 // ── 4. Build result sets ──────────────────────────────────────────────────────
-if ($is_greeting || $intent === 'greeting' || empty($group_ids)) {
-    // Profile/greeting mode: show top quality-scored groups (diversity already applied)
+$is_search_intent = !$is_greeting && !in_array($intent, ['greeting', 'off_topic'], true);
+
+if (!$is_search_intent) {
+    // Greeting or off-topic: show top quality-scored profile groups
     $groups = array_slice($all_groups, 0, 4);
 } else {
-    // Groq picked specific groups — filter and preserve Groq's order
+    // Search mode: show only what Groq selected — empty array is valid (no matches)
     $by_id  = [];
     foreach ($all_groups as $g) $by_id[$g['group_id']] = $g;
     $groups = array_values(array_filter(
