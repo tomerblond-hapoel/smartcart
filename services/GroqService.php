@@ -23,6 +23,8 @@ Rules:
 - Translate Hebrew product names to English (e.g. "אוזניות" → "headphones", "כיסא" → "chair")
 - Remove filler words, quantities, adjectives like "good" / "cheap"
 - Only include concrete product terms
+- NEVER split brand names or model names into parts: "iphone" stays "iphone" (not "iphone"+"phone"), "airpods" stays "airpods" (not "air"+"pod"), "macbook" stays "macbook"
+- If the user types a specific model (e.g. "iphone 15"), include the brand and model as separate keywords: ["iphone","15"]
 - Output ONLY the JSON object, no explanation
 SYS;
 

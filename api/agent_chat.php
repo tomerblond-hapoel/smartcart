@@ -167,8 +167,9 @@ function agent_search_groups(PDO $pdo, array $keywords, ?float $lat, ?float $lng
         $in_name = [];
         $in_desc = [];
         foreach ($keywords as $kw) {
-            if (strpos($name_lower, $kw) !== false)      $in_name[] = $kw;
-            elseif (strpos($desc_lower, $kw) !== false)  $in_desc[] = $kw;
+            $pat = '/\b' . preg_quote($kw, '/') . '\b/i';
+            if (preg_match($pat, $name_lower))      $in_name[] = $kw;
+            elseif (preg_match($pat, $desc_lower))  $in_desc[] = $kw;
         }
         if (empty($in_name)) continue; // at least one keyword must hit the product name
 

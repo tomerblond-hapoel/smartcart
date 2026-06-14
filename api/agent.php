@@ -220,13 +220,14 @@ foreach ($groups as $g) {
         $name_lower = strtolower($g['product_name']);
         $desc_lower = strtolower($g['product_desc'] ?? '');
 
-        // Find which keywords appear in the title vs description
+        // Find which keywords appear in the title vs description (word-boundary match)
         $in_name = [];
         $in_desc = [];
         foreach ($query_keywords as $kw) {
-            if (strpos($name_lower, $kw) !== false) {
+            $pat = '/\b' . preg_quote($kw, '/') . '\b/i';
+            if (preg_match($pat, $name_lower)) {
                 $in_name[] = $kw;
-            } elseif (strpos($desc_lower, $kw) !== false) {
+            } elseif (preg_match($pat, $desc_lower)) {
                 $in_desc[] = $kw;
             }
         }
