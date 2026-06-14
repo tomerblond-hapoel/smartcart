@@ -67,13 +67,18 @@ if ($groq_kw !== null && !empty($groq_kw['keywords'])) {
 }
 
 // ── 2. DB search ──────────────────────────────────────────────────────────────
-$groups   = [];
-$products = [];
+$groups      = [];
+$products    = [];
+$profile_mode = false;
 
 if (!empty($keywords)) {
     $groups   = agent_search_groups($pdo, $keywords, $user_lat, $user_lng, $user_cats);
     // Always search products too — needed for create-group intent & no-group fallback
     $products = agent_search_products($pdo, $keywords, $auto_category);
+} else {
+    // Greeting / general question — show personalised profile picks instead of empty response
+    $groups       = agent_profile_groups($pdo, $user_lat, $user_lng, $user_cats);
+    $profile_mode = true;
 }
 
 // ── 3. Build Groq context from real DB results ────────────────────────────────
@@ -83,7 +88,7 @@ $db_context = agent_build_context($groups, $products);
 $groq_res = groq_chat_response($message, $history, $db_context, $user_name);
 $intent   = $groq_res['intent']  ?? 'other';
 // Fall back to template message when Groq is unavailable
-$reply    = $groq_res['message'] ?? agent_fallback_reply($groups, $products, $keywords);
+$reply = $groq_res['message'] ?? agent_fallback_reply($groups, $products, $keywords, $profile_mode);
 
 // ── 5. Return ─────────────────────────────────────────────────────────────────
 json_response([
@@ -325,9 +330,104 @@ function agent_build_context(array $groups, array $products): string {
 }
 
 /**
+ * Load top open groups for profile/greeting mode (no keyword search).
+ * Scored by: user preferences, discount, fill rate, urgency, location.
+ * Returns up to 4 results with category diversity cap (max 2 per category).
+ */
+function agent_profile_groups(PDO $pdo, ?float $lat, ?float $lng, array $user_cats = []): array {
+    $stmt = $pdo->prepare("
+        SELECT gp.id AS group_id, gp.product_id,
+               gp.current_participants, gp.target_participants,
+               gp.deadline, gp.city,
+               gp.lat AS group_lat, gp.lng AS group_lng,
+               p.name AS product_name, p.image_url AS product_image,
+               p.price_ils, p.group_price_ils,
+               p.category, p.min_participants,
+               b.business_name, b.city AS biz_city,
+               b.lat AS biz_lat, b.lng AS biz_lng
+        FROM   group_purchases gp
+        JOIN   products  p ON p.id  = gp.product_id  AND p.status = 'active'
+        JOIN   businesses b ON b.id = p.business_id  AND b.status = 'active'
+        WHERE  gp.status = 'open'
+        ORDER  BY gp.created_at DESC
+    ");
+    $stmt->execute();
+    $all = $stmt->fetchAll();
+
+    $scored = [];
+    foreach ($all as $g) {
+        $score = 0;
+
+        if (!empty($user_cats) && in_array($g['category'], $user_cats, true)) $score += 30;
+
+        $price  = (float)$g['price_ils'];
+        $gprice = (float)$g['group_price_ils'];
+        $disc   = $price > 0 ? (($price - $gprice) / $price * 100) : 0;
+        $score += $disc >= 30 ? 20 : ($disc >= 15 ? 10 : 0);
+
+        $current = (int)$g['current_participants'];
+        $target  = (int)$g['target_participants'];
+        $fill    = $target > 0 ? ($current / $target) : 0;
+        $score  += $fill >= 0.5 ? 15 : ($fill >= 0.25 ? 7 : 0);
+
+        $days_left = days_until($g['deadline']);
+        $score    += $days_left <= 3 ? 10 : ($days_left <= 7 ? 5 : 0);
+
+        $dist = null;
+        if ($lat !== null && $lng !== null) {
+            $glat = $g['group_lat'] ?? $g['biz_lat'];
+            $glng = $g['group_lng'] ?? $g['biz_lng'];
+            if ($glat !== null && $glng !== null) {
+                $dist   = haversine($lat, $lng, (float)$glat, (float)$glng);
+                $score += $dist <= 10 ? 25 : ($dist <= 30 ? 15 : 0);
+            }
+        }
+
+        $scored[] = [
+            'group_id'             => (int)$g['group_id'],
+            'product_id'           => (int)$g['product_id'],
+            'product_name'         => $g['product_name'],
+            'product_image'        => $g['product_image'],
+            'business_name'        => $g['business_name'],
+            'group_price_ils'      => $gprice,
+            'price_ils'            => $price,
+            'city'                 => $g['city'] ?? $g['biz_city'],
+            'category'             => $g['category'],
+            'score'                => $score,
+            'discount_percent'     => (int)round($disc),
+            'fill_percent'         => (int)round($fill * 100),
+            'current_participants' => $current,
+            'target_participants'  => $target,
+            'min_participants'     => (int)$g['min_participants'],
+            'days_left'            => $days_left,
+            'countdown'            => countdown_label($g['deadline']),
+            'distance_km'          => $dist !== null ? round($dist, 1) : null,
+        ];
+    }
+
+    usort($scored, fn($a, $b) => $b['score'] - $a['score']);
+
+    // Diversity cap: max 2 per category
+    $cat_counts = [];
+    $diverse    = [];
+    foreach ($scored as $g) {
+        $c = $g['category'] ?? 'other';
+        $cat_counts[$c] = ($cat_counts[$c] ?? 0) + 1;
+        if ($cat_counts[$c] <= 2) $diverse[] = $g;
+    }
+
+    return array_slice($diverse, 0, 4);
+}
+
+/**
  * Template-based fallback used when Groq is unavailable.
  */
-function agent_fallback_reply(array $groups, array $products, array $keywords): string {
+function agent_fallback_reply(array $groups, array $products, array $keywords, bool $profile_mode = false): string {
+    if ($profile_mode && !empty($groups)) {
+        $n = count($groups);
+        return "Hi! Here are **{$n} featured group deal" . ($n > 1 ? 's' : '') . "** you might like. 🛍️ "
+            . "Join one below to unlock the group discount — or tell me what you're looking for!";
+    }
     if (!empty($groups)) {
         $n = count($groups);
         return "I found **{$n} open group" . ($n > 1 ? 's' : '') . "** matching your search! 🎉 "
