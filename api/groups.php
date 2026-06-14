@@ -16,9 +16,10 @@ require_once __DIR__ . '/../includes/paypal.php';
 require_once __DIR__ . '/../includes/notifications.php';
 
 // ── Payment-mode helper ───────────────────────────────────────────────────────
-// Returns true when the hosted-payment-page flow is active (PayMe / Meshulam /
-// mock). Returns false when PAYMENT_PROVIDER is empty or 'paypal', meaning the
-// legacy PayPal authorize-on-join flow stays in effect.
+// Returns true when the free-join / pay-after-fill flow is active.
+// Any non-empty PAYMENT_PROVIDER (including 'paypal') uses this flow:
+//   join is free → group fills → payment links generated → Pay Now button shown.
+// Returns false only when PAYMENT_PROVIDER is empty (no payment configured).
 function is_hosted_payment_mode(): bool {
     $p = defined('PAYMENT_PROVIDER') ? strtolower(trim(PAYMENT_PROVIDER)) : '';
     return $p !== '';

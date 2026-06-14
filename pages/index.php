@@ -19,7 +19,7 @@ if (current_user_role() === 'admin') {
 
 $pdo = getPDO();
 
-// Featured groups (6 newest open)
+// Featured / open groups (6 newest, no deadline filter — status is authoritative)
 $featured_stmt = $pdo->query("
     SELECT gp.id, gp.target_participants, gp.current_participants, gp.deadline, gp.status,
            p.name AS product_name, p.image_url, p.group_price_ils, p.price_ils, p.category,
@@ -29,7 +29,7 @@ $featured_stmt = $pdo->query("
     FROM group_purchases gp
     JOIN products p ON p.id = gp.product_id AND p.status = 'active'
     JOIN businesses b ON b.id = p.business_id
-    WHERE gp.status = 'open' AND gp.deadline > NOW()
+    WHERE gp.status = 'open'
     ORDER BY gp.created_at DESC
     LIMIT 6
 ");
@@ -82,6 +82,28 @@ $successful_deals = (int)$stats_stmt2->fetchColumn();
 
 $stats_stmt3 = $pdo->query("SELECT ROUND(AVG((p.price_ils - p.group_price_ils) / p.price_ils * 100)) FROM products p WHERE p.status = 'active' AND p.price_ils > 0");
 $avg_savings = (int)$stats_stmt3->fetchColumn();
+
+// My groups (logged-in only) — active + pending-payment groups for the homepage widget
+$my_groups = [];
+if ($user_id) {
+    $mg_stmt = $pdo->prepare("
+        SELECT gp.id, gp.status, gp.target_participants, gp.current_participants, gp.deadline,
+               p.name AS product_name, p.image_url, p.group_price_ils,
+               ROUND(gp.current_participants / gp.target_participants * 100) AS fill_pct,
+               gm.status AS member_status,
+               b.business_name
+        FROM group_members gm
+        JOIN group_purchases gp ON gp.id = gm.group_id
+        JOIN products p ON p.id = gp.product_id AND p.status = 'active'
+        JOIN businesses b ON b.id = p.business_id
+        WHERE gm.user_id = ?
+          AND gp.status IN ('open', 'ready_for_payment')
+        ORDER BY gp.created_at DESC
+        LIMIT 4
+    ");
+    $mg_stmt->execute([$user_id]);
+    $my_groups = $mg_stmt->fetchAll();
+}
 
 $categories = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
 $cat_icons  = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗','other'=>'📦'];
@@ -181,6 +203,61 @@ include __DIR__ . '/../includes/header.php';
 </section>
 <?php endif; ?>
 
+<!-- MY GROUPS (logged-in users only) -->
+<?php if ($user_id): ?>
+<section class="section" style="padding-bottom:0;">
+    <div class="container">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 class="section-title" style="margin-bottom:0;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--purple);vertical-align:-3px;margin-right:6px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <?= $t['home_my_groups_title'] ?>
+            </h2>
+            <a href="<?= APP_URL ?>/pages/my-groups.php" style="font-size:14px;font-weight:500;"><?= $t['home_my_groups_see_all'] ?></a>
+        </div>
+
+        <?php if (empty($my_groups)): ?>
+        <div style="background:var(--gray-100);border-radius:var(--radius);padding:20px;text-align:center;color:var(--gray-500);">
+            <?= $t['home_my_groups_empty'] ?>
+            <br><a href="<?= APP_URL ?>/pages/browse.php" class="btn btn-primary btn-sm" style="margin-top:12px;display:inline-block;"><?= $t['home_cta_browse'] ?></a>
+        </div>
+        <?php else: ?>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">
+            <?php foreach ($my_groups as $mg):
+                $mg_fill = (int)$mg['fill_pct'];
+                $mg_fill_class = $mg_fill >= 80 ? 'high' : ($mg_fill >= 50 ? 'medium' : '');
+                $mg_is_rfp = $mg['status'] === 'ready_for_payment';
+            ?>
+            <a href="<?= APP_URL ?>/pages/group.php?id=<?= $mg['id'] ?>" style="display:block;text-decoration:none;background:#fff;border:1px solid <?= $mg_is_rfp ? 'var(--purple)' : 'var(--border)' ?>;border-radius:12px;padding:14px;transition:transform .18s,box-shadow .18s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(111,82,255,.14)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                    <?php if ($mg['image_url']): ?>
+                    <img src="<?= img_url($mg['image_url']) ?>" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;">
+                    <?php else: ?>
+                    <div style="width:44px;height:44px;background:var(--purple-50);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px;">📦</div>
+                    <?php endif; ?>
+                    <div style="min-width:0;">
+                        <div style="font-size:14px;font-weight:600;color:var(--gray-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= htmlspecialchars($mg['product_name']) ?></div>
+                        <div style="font-size:11px;color:var(--gray-500);"><?= htmlspecialchars($mg['business_name']) ?></div>
+                    </div>
+                    <span class="card-badge badge-<?= $mg['status'] ?>" style="flex-shrink:0;margin-left:auto;"><?= $t['group_' . $mg['status']] ?></span>
+                </div>
+                <div class="progress-wrap" style="margin-bottom:4px;">
+                    <div class="progress-bar <?= $mg_fill_class ?>" style="width:<?= $mg_fill ?>%;"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);">
+                    <span><?= $mg['current_participants'] ?>/<?= $mg['target_participants'] ?> <?= $t['participants'] ?></span>
+                    <span style="font-weight:600;color:var(--purple);"><?= format_ils($mg['group_price_ils']) ?></span>
+                </div>
+                <?php if ($mg_is_rfp): ?>
+                <div style="margin-top:8px;text-align:center;font-size:12px;font-weight:600;color:var(--purple);background:var(--purple-50);border-radius:6px;padding:4px 0;">💳 Payment required — tap to pay</div>
+                <?php endif; ?>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+</section>
+<?php endif; ?>
+
 <!-- CATEGORIES -->
 <section class="section" style="padding-bottom:0;">
     <div class="container">
@@ -244,18 +321,18 @@ include __DIR__ . '/../includes/header.php';
 </section>
 <?php endif; ?>
 
-<!-- FEATURED GROUPS -->
+<!-- OPEN GROUPS -->
 <section class="section">
     <div class="container">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h2 class="section-title" style="margin-bottom:0;"><?= $t['home_featured'] ?></h2>
-            <a href="<?= APP_URL ?>/pages/browse.php" style="font-size:14px;font-weight:500;">Browse all →</a>
+            <a href="<?= APP_URL ?>/pages/browse.php" style="font-size:14px;font-weight:500;"><?= $t['home_open_groups_see_all'] ?></a>
         </div>
 
         <?php if (empty($featured)): ?>
         <div class="empty-state">
-            <p>No active group purchases yet. Be the first to start one!</p>
-            <a href="<?= APP_URL ?>/pages/browse.php" class="btn btn-primary mt-16">Browse Products</a>
+            <p><?= $t['home_open_groups_empty'] ?></p>
+            <a href="<?= APP_URL ?>/pages/browse.php" class="btn btn-primary mt-16"><?= $t['home_cta_browse'] ?></a>
         </div>
         <?php else: ?>
         <div class="grid-products grid">
@@ -263,17 +340,26 @@ include __DIR__ . '/../includes/header.php';
                 $fill = (int)$g['fill_pct'];
                 $fill_class = $fill >= 80 ? 'high' : ($fill >= 50 ? 'medium' : '');
                 $days = days_until($g['deadline']);
+                $more = max(0, (int)$g['target_participants'] - (int)$g['current_participants']);
             ?>
             <div style="background:#fff;border:1px solid #e9e9f1;border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(111,82,255,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="window.location='<?= APP_URL ?>/pages/group.php?id=<?= $g['id'] ?>'">
                 <?php if ($g['image_url']): ?>
-                <div style="width:100%;height:180px;background:url('<?= img_url($g['image_url']) ?>') center/cover no-repeat;"></div>
+                <div style="width:100%;height:180px;background:url('<?= img_url($g['image_url']) ?>') center/cover no-repeat;position:relative;">
+                    <span style="position:absolute;top:8px;right:8px;font-size:11px;font-weight:700;color:#fff;background:var(--purple);padding:3px 10px;border-radius:999px;"><?= $g['disc'] ?>% <?= $t['off'] ?></span>
+                </div>
                 <?php else: ?>
-                <div style="width:100%;height:180px;background:var(--purple-50);display:flex;align-items:center;justify-content:center;"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--purple);opacity:.35"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
+                <div style="width:100%;height:180px;background:var(--purple-50);display:flex;align-items:center;justify-content:center;position:relative;">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--purple);opacity:.35"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    <span style="position:absolute;top:8px;right:8px;font-size:11px;font-weight:700;color:#fff;background:var(--purple);padding:3px 10px;border-radius:999px;"><?= $g['disc'] ?>% <?= $t['off'] ?></span>
+                </div>
                 <?php endif; ?>
                 <div class="card-body">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
                         <span class="card-badge badge-open"><?= $t['group_open'] ?></span>
-                        <span class="card-badge badge-discount"><?= $g['disc'] ?>% <?= $t['off'] ?></span>
+                        <span style="font-size:12px;color:<?= $days <= 3 ? 'var(--danger)' : 'var(--gray-500)' ?>;display:flex;align-items:center;gap:3px;">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <?= countdown_label($g['deadline']) ?>
+                        </span>
                     </div>
                     <h3 style="font-size:15px;font-weight:600;margin-bottom:4px;color:var(--gray-900);">
                         <?= htmlspecialchars($g['product_name']) ?>
@@ -290,8 +376,7 @@ include __DIR__ . '/../includes/header.php';
                     <div class="progress-wrap" style="margin-bottom:4px;">
                         <div class="progress-bar <?= $fill_class ?>" style="width:<?= $fill ?>%;"></div>
                     </div>
-                    <div class="progress-label">
-                        <?php $more = max(0, (int)$g['target_participants'] - (int)$g['current_participants']); ?>
+                    <div class="progress-label" style="margin-bottom:12px;">
                         <span><?= $g['current_participants'] ?>/<?= $g['target_participants'] ?> <?= $t['participants'] ?></span>
                         <?php if ($more > 0): ?>
                         <span style="color:var(--danger);font-weight:600;"><?= $more ?> <?= $t['home_more_to_save'] ?></span>
@@ -299,10 +384,11 @@ include __DIR__ . '/../includes/header.php';
                         <span style="color:var(--green);font-weight:600;">✓ Goal reached!</span>
                         <?php endif; ?>
                     </div>
-                    <div style="margin-top:10px;font-size:12px;color:<?= $days <= 3 ? 'var(--danger)' : 'var(--gray-500)' ?>;display:flex;align-items:center;gap:4px;">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        <?= countdown_label($g['deadline']) ?>
-                    </div>
+                    <a href="<?= APP_URL ?>/pages/group.php?id=<?= $g['id'] ?>"
+                       class="btn btn-primary btn-full btn-sm"
+                       onclick="event.stopPropagation();">
+                        <?= $t['group_join'] ?>
+                    </a>
                 </div>
             </div>
             <?php endforeach; ?>
