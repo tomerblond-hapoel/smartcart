@@ -23,6 +23,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../services/GroqService.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -80,11 +81,23 @@ function normalize_query(string $q): array {
 
 if ($query_mode) {
     $query_keywords = normalize_query($raw_query);
+
+    // ── Groq LLM enhancement: Hebrew + natural language → English keywords ─────
+    // Runs even when normalize_query() returned nothing (e.g. pure Hebrew input).
+    // On timeout or API error, falls back silently to the rule-based path below.
+    $groq = groq_extract_query($raw_query);
+    if ($groq !== null && !empty($groq['keywords'])) {
+        $query_keywords = array_values(array_unique(array_merge($query_keywords, $groq['keywords'])));
+        if ($groq['category'] !== null) {
+            $auto_category = $groq['category'];
+        }
+    }
+
     if (empty($query_keywords)) {
         $query_mode = false; // every word was a stop-word → fall back to profile mode
     }
 
-    // Auto-detect category from normalised keywords
+    // Auto-detect category from normalised keywords (only when Groq didn't set one)
     $kw_cat_map = [
         'electronics' => ['speaker','headphone','earphone','airpod','jbl','sony','samsung',
                           'bose','apple','iphone','laptop','computer','tablet','ipad','tv',
@@ -108,9 +121,11 @@ if ($query_mode) {
         'books'       => ['book','novel','textbook','guide','cookbook','reading','magazine'],
         'automotive'  => ['car','tire','wheel','motor','engine','vehicle','dash','oil','wiper'],
     ];
-    foreach ($kw_cat_map as $cat => $cat_kws) {
-        foreach ($query_keywords as $kw) {
-            if (in_array($kw, $cat_kws, true)) { $auto_category = $cat; break 2; }
+    if ($auto_category === null) {
+        foreach ($kw_cat_map as $cat => $cat_kws) {
+            foreach ($query_keywords as $kw) {
+                if (in_array($kw, $cat_kws, true)) { $auto_category = $cat; break 2; }
+            }
         }
     }
 }

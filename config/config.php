@@ -54,3 +54,6 @@ define('PAYMENT_SECRET',         $_ENV['PAYMENT_SECRET']         ?? getenv('PAYM
 define('PAYMENT_WEBHOOK_SECRET', $_ENV['PAYMENT_WEBHOOK_SECRET'] ?? getenv('PAYMENT_WEBHOOK_SECRET') ?: 'dev_secret_change_me');
 define('PAYMENT_SUCCESS_URL',    $_ENV['PAYMENT_SUCCESS_URL']    ?? getenv('PAYMENT_SUCCESS_URL')    ?: APP_URL . '/pages/my-orders.php');
 define('PAYMENT_CANCEL_URL',     $_ENV['PAYMENT_CANCEL_URL']     ?? getenv('PAYMENT_CANCEL_URL')     ?: APP_URL . '/pages/my-groups.php');
+
+// ── Groq LLM API key (for Smart Agent Hebrew/NL query understanding) ──────────
+define('GROQ_API_KEY', $_ENV['GROQ_API_KEY'] ?? getenv('GROQ_API_KEY') ?: '');
