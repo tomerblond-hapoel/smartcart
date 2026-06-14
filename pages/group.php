@@ -161,6 +161,12 @@ include __DIR__ . '/../includes/header.php';
             </div>
             <?php endif; ?>
 
+            <?php if (!empty($_GET['pay_error'])): ?>
+            <div class="flash flash-error" style="margin-bottom:16px;border-radius:8px;">
+                ⚠️ Payment failed to load — please try again. <?php if ($_GET['pay_error'] !== '1'): ?>(<?= htmlspecialchars($_GET['pay_error']) ?>)<?php endif; ?>
+            </div>
+            <?php endif; ?>
+
             <!-- Product Info -->
             <div class="card" style="margin-bottom:20px;">
                 <div class="card-body">

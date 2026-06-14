@@ -69,11 +69,9 @@ $result = PaymentService::createPaymentLink([
 ]);
 
 if (!$result['ok']) {
-    PaymentService::log('pay_redirect_failed', [
-        'payment_id' => $payment_id,
-        'error'      => $result['error'] ?? 'unknown',
-    ]);
-    header('Location: ' . APP_URL . '/pages/group.php?id=' . $payment['group_id'] . '&pay_error=1');
+    $err = $result['error'] ?? 'unknown';
+    PaymentService::log('pay_redirect_failed', ['payment_id' => $payment_id, 'error' => $err]);
+    header('Location: ' . APP_URL . '/pages/group.php?id=' . $payment['group_id'] . '&pay_error=' . urlencode($err));
     exit;
 }
 

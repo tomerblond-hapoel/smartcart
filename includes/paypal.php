@@ -14,7 +14,14 @@ require_once __DIR__ . '/../config/config.php';
 
 function paypal_token(): ?string {
     if (session_status() === PHP_SESSION_NONE) session_start();
-    if (!empty($_SESSION['paypal_token']) && !empty($_SESSION['paypal_token_expires']) && $_SESSION['paypal_token_expires'] > time()) {
+    // Invalidate cached token if credentials have changed since it was issued
+    $cred_hash = md5(PAYPAL_CLIENT_ID . ':' . PAYPAL_SECRET);
+    if (
+        !empty($_SESSION['paypal_token']) &&
+        !empty($_SESSION['paypal_token_expires']) &&
+        ($_SESSION['paypal_token_cred_hash'] ?? '') === $cred_hash &&
+        $_SESSION['paypal_token_expires'] > time()
+    ) {
         return $_SESSION['paypal_token'];
     }
     $ch = curl_init(PAYPAL_BASE_URL . '/v1/oauth2/token');
@@ -34,8 +41,9 @@ function paypal_token(): ?string {
         return null;
     }
     $data = json_decode($resp, true);
-    $_SESSION['paypal_token']         = $data['access_token'];
-    $_SESSION['paypal_token_expires'] = time() + (int)($data['expires_in'] ?? 3600) - 60;
+    $_SESSION['paypal_token']           = $data['access_token'];
+    $_SESSION['paypal_token_expires']   = time() + (int)($data['expires_in'] ?? 3600) - 60;
+    $_SESSION['paypal_token_cred_hash'] = $cred_hash;
     return $data['access_token'];
 }
 
