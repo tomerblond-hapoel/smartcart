@@ -5,14 +5,11 @@
 // Body (JSON): { message, history, user_lat?, user_lng? }
 // Response:    { message, intent, groups, products }
 //
-// Architecture:
-//   1. Normalize query keywords (rule-based + Groq keyword extractor)
-//   2. DB search: open groups ranked by relevance, then catalog products as fallback
-//   3. Groq Llama 3.3 generates a natural-language response from real DB results
-//   4. Return message text + structured card data to the frontend
-//
-// The frontend renders group cards with in-chat Join buttons and product cards
-// with in-chat "Start a Group" buttons — actual DB mutations use existing api/groups.php.
+// Architecture (generative):
+//   1. Fetch ALL open groups + ALL catalog products from DB
+//   2. Score groups for quality (preferences, discount, fill, urgency, location)
+//   3. Send full list + user message to Groq — Groq picks relevant IDs semantically
+//   4. Filter DB results to Groq's selected IDs and return cards + message
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
@@ -43,7 +40,6 @@ $user_cats = json_decode($user['preferred_categories'] ?? '[]', true) ?: [];
 // ── Parse request ─────────────────────────────────────────────────────────────
 $body    = get_json_body();
 $message = trim($body['message'] ?? '');
-// Keep at most the last 10 turns so the Groq context stays small
 $history = array_slice(array_values((array)($body['history'] ?? [])), -10);
 
 if (!empty($body['user_lat']) && !empty($body['user_lng'])) {
@@ -55,40 +51,45 @@ if ($message === '') {
     json_response(['error' => 'Message required'], 400);
 }
 
-// ── 1. Extract keywords ───────────────────────────────────────────────────────
-$keywords = agent_normalize($message);
+// ── 1. Detect greeting (no search intent) ─────────────────────────────────────
+$is_greeting = empty(agent_normalize($message));
 
-// Groq keyword extractor adds Hebrew translation + category detection
-$groq_kw       = groq_extract_query($message);
-$auto_category = null;
-if ($groq_kw !== null && !empty($groq_kw['keywords'])) {
-    $keywords      = array_values(array_unique(array_merge($keywords, $groq_kw['keywords'])));
-    $auto_category = $groq_kw['category'] ?? null;
-}
+// ── 2. Fetch all data from DB ─────────────────────────────────────────────────
+$all_groups   = agent_fetch_scored_groups($pdo, $user_lat, $user_lng, $user_cats);
+$all_products = agent_fetch_catalog_products($pdo);
 
-// ── 2. DB search ──────────────────────────────────────────────────────────────
-$groups      = [];
-$products    = [];
-$profile_mode = false;
+// ── 3. Groq semantic selection + natural response ─────────────────────────────
+$groq_res   = groq_chat_semantic($message, $history, $all_groups, $all_products, $user_name, $is_greeting);
+$intent     = $groq_res['intent'] ?? 'other';
+$reply      = $groq_res['message'];
+$group_ids  = $groq_res['group_ids'] ?? [];
+$prod_ids   = $groq_res['product_ids'] ?? [];
 
-if (!empty($keywords)) {
-    $groups   = agent_search_groups($pdo, $keywords, $user_lat, $user_lng, $user_cats);
-    // Always search products too — needed for create-group intent & no-group fallback
-    $products = agent_search_products($pdo, $keywords, $auto_category);
+// ── 4. Build result sets ──────────────────────────────────────────────────────
+if ($is_greeting || $intent === 'greeting' || empty($group_ids)) {
+    // Profile/greeting mode: show top quality-scored groups (diversity already applied)
+    $groups = array_slice($all_groups, 0, 4);
 } else {
-    // Greeting / general question — show personalised profile picks instead of empty response
-    $groups       = agent_profile_groups($pdo, $user_lat, $user_lng, $user_cats);
-    $profile_mode = true;
+    // Groq picked specific groups — filter and preserve Groq's order
+    $by_id  = [];
+    foreach ($all_groups as $g) $by_id[$g['group_id']] = $g;
+    $groups = array_values(array_filter(
+        array_map(fn($id) => $by_id[$id] ?? null, $group_ids),
+        fn($g) => $g !== null
+    ));
 }
 
-// ── 3. Build Groq context from real DB results ────────────────────────────────
-$db_context = agent_build_context($groups, $products);
+$by_prod_id = [];
+foreach ($all_products as $p) $by_prod_id[(int)$p['id']] = $p;
+$products = array_values(array_filter(
+    array_map(fn($id) => $by_prod_id[$id] ?? null, $prod_ids),
+    fn($p) => $p !== null
+));
 
-// ── 4. Generate natural response via Groq ─────────────────────────────────────
-$groq_res = groq_chat_response($message, $history, $db_context, $user_name);
-$intent   = $groq_res['intent']  ?? 'other';
-// Fall back to template message when Groq is unavailable
-$reply = $groq_res['message'] ?? agent_fallback_reply($groups, $products, $keywords, $profile_mode);
+// Fallback reply when Groq is unavailable
+if ($reply === null) {
+    $reply = agent_fallback_reply($groups, $products, $is_greeting);
+}
 
 // ── 5. Return ─────────────────────────────────────────────────────────────────
 json_response([
@@ -103,8 +104,8 @@ json_response([
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * Strip stop-words and normalise an English/mixed query into product keywords.
- * Hebrew characters are stripped here; groq_extract_query() handles translation.
+ * Detect if the message has any real search intent (non-stop English words or Hebrew).
+ * Returns empty array for pure greetings like "hi", "hello", "hey".
  */
 function agent_normalize(string $q): array {
     static $stop = [
@@ -116,27 +117,25 @@ function agent_normalize(string $q): array {
         'list','search','now','hi','hello','hey','recommend','suggest','help',
         'just','really','very','about','price','purchase','order','on','in','at',
         'from','with','and','or','not','of','what','where','how','when','which',
-        'create','start','join','make',
+        'create','start','join','make','shalom','sup','yo',
     ];
+    // Hebrew input always has search intent
+    if (preg_match('/[א-ת]/', $q)) return ['hebrew'];
     $words = preg_split('/[\s,;.!?\/\-]+/', strtolower($q), -1, PREG_SPLIT_NO_EMPTY);
     $out   = [];
     foreach ($words as $w) {
         $w = preg_replace('/[^a-z0-9]/', '', $w);
         if (strlen($w) < 2 || in_array($w, $stop, true)) continue;
-        // Normalise plurals: "speakers" → "speaker"
-        if (strlen($w) > 4 && substr($w, -1) === 's' && substr($w, -2) !== 'ss') {
-            $w = substr($w, 0, -1);
-        }
         $out[] = $w;
     }
     return array_values(array_unique($out));
 }
 
 /**
- * Search open group purchases and rank by relevance + quality score.
- * Returns up to 5 best matches; empty array when no keywords match any product name.
+ * Fetch all open groups and score them by quality (preferences, discount, fill, urgency, location).
+ * Returns groups sorted by score descending, with diversity cap (max 2 per category).
  */
-function agent_search_groups(PDO $pdo, array $keywords, ?float $lat, ?float $lng, array $user_cats = []): array {
+function agent_fetch_scored_groups(PDO $pdo, ?float $lat, ?float $lng, array $user_cats = []): array {
     $stmt = $pdo->prepare("
         SELECT gp.id AS group_id, gp.product_id,
                gp.current_participants, gp.target_participants,
@@ -144,205 +143,6 @@ function agent_search_groups(PDO $pdo, array $keywords, ?float $lat, ?float $lng
                gp.lat AS group_lat, gp.lng AS group_lng,
                p.name AS product_name, p.description AS product_desc,
                p.image_url AS product_image, p.price_ils, p.group_price_ils,
-               p.category, p.min_participants,
-               b.business_name, b.city AS biz_city,
-               b.lat AS biz_lat, b.lng AS biz_lng
-        FROM   group_purchases gp
-        JOIN   products  p ON p.id  = gp.product_id  AND p.status = 'active'
-        JOIN   businesses b ON b.id = p.business_id  AND b.status = 'active'
-        WHERE  gp.status = 'open'
-        ORDER  BY gp.created_at DESC
-    ");
-    $stmt->execute();
-    $all = $stmt->fetchAll();
-
-    $brand_kws = ['jbl','sony','samsung','apple','bose','nike','adidas','asus','lg',
-                  'philips','dyson','xiaomi','huawei','dell','hp','lenovo','logitech'];
-
-    $results = [];
-    foreach ($all as $g) {
-        $name_lower = strtolower($g['product_name']);
-        $desc_lower = strtolower($g['product_desc'] ?? '');
-
-        $in_name = [];
-        $in_desc = [];
-        foreach ($keywords as $kw) {
-            $pat = '/\b' . preg_quote($kw, '/') . '\b/i';
-            if (preg_match($pat, $name_lower))      $in_name[] = $kw;
-            elseif (preg_match($pat, $desc_lower))  $in_desc[] = $kw;
-        }
-        if (empty($in_name)) continue; // at least one keyword must hit the product name
-
-        $total  = count($keywords);
-        $n_hit  = count($in_name);
-        $phrase = implode(' ', $keywords);
-        $exact  = $total > 1 && strpos($name_lower, $phrase) !== false;
-
-        if ($exact)                                           $score = 50;
-        elseif ($total === 1 && $n_hit === 1)                 $score = 35;
-        elseif ($total >= 2 && $n_hit === $total)             $score = 40;
-        elseif ($total >= 3 && $n_hit >= (int)ceil($total * 0.66)) $score = 28;
-        else                                                  $score = 18;
-
-        foreach ($in_name as $mk) {
-            if (in_array($mk, $brand_kws, true)) { $score += 5; break; }
-        }
-        $score += min(6, count($in_desc) * 3);
-
-        $price  = (float)$g['price_ils'];
-        $gprice = (float)$g['group_price_ils'];
-        $disc   = $price > 0 ? (($price - $gprice) / $price * 100) : 0;
-        $score += $disc >= 30 ? 20 : ($disc >= 15 ? 10 : 0);
-
-        $current = (int)$g['current_participants'];
-        $target  = (int)$g['target_participants'];
-        $fill    = $target > 0 ? ($current / $target) : 0;
-        $score  += $fill >= 0.5 ? 15 : ($fill >= 0.25 ? 7 : 0);
-
-        $days_left = days_until($g['deadline']);
-        $score    += $days_left <= 3 ? 10 : ($days_left <= 7 ? 5 : 0);
-
-        // Preference boost: user has saved this category as a preference
-        if (!empty($user_cats) && in_array($g['category'], $user_cats, true)) {
-            $score += 10;
-        }
-
-        $dist = null;
-        if ($lat !== null && $lng !== null) {
-            $glat = $g['group_lat'] ?? $g['biz_lat'];
-            $glng = $g['group_lng'] ?? $g['biz_lng'];
-            if ($glat !== null && $glng !== null) {
-                $dist   = haversine($lat, $lng, (float)$glat, (float)$glng);
-                $score += $dist <= 10 ? 25 : ($dist <= 30 ? 15 : 0);
-            }
-        }
-
-        $results[] = [
-            'group_id'             => (int)$g['group_id'],
-            'product_id'           => (int)$g['product_id'],
-            'product_name'         => $g['product_name'],
-            'product_image'        => $g['product_image'],
-            'business_name'        => $g['business_name'],
-            'group_price_ils'      => $gprice,
-            'price_ils'            => $price,
-            'city'                 => $g['city'] ?? $g['biz_city'],
-            'category'             => $g['category'],
-            'score'                => $score,
-            'discount_percent'     => (int)round($disc),
-            'fill_percent'         => (int)round($fill * 100),
-            'current_participants' => $current,
-            'target_participants'  => $target,
-            'min_participants'     => (int)$g['min_participants'],
-            'days_left'            => $days_left,
-            'countdown'            => countdown_label($g['deadline']),
-            'distance_km'          => $dist !== null ? round($dist, 1) : null,
-        ];
-    }
-
-    usort($results, function ($a, $b) { return $b['score'] - $a['score']; });
-    return array_slice($results, 0, 5);
-}
-
-/**
- * Search the product catalog (regardless of open groups).
- * Used for create-group intent and as a fallback when no open groups match.
- */
-function agent_search_products(PDO $pdo, array $keywords, ?string $cat): array {
-    if (empty($keywords)) return [];
-
-    $parts  = [];
-    $params = [];
-    foreach ($keywords as $kw) {
-        $parts[]  = '(p.name LIKE ? OR p.description LIKE ?)';
-        $params[] = "%$kw%";
-        $params[] = "%$kw%";
-    }
-    $cond = implode(' OR ', $parts);
-
-    $stmt = $pdo->prepare("
-        SELECT p.id, p.name AS product_name, p.image_url AS product_image,
-               p.price_ils, p.group_price_ils, p.category, p.min_participants,
-               ROUND((p.price_ils - p.group_price_ils) / NULLIF(p.price_ils,0) * 100)
-                   AS discount_percent,
-               b.business_name
-        FROM   products  p
-        JOIN   businesses b ON b.id = p.business_id AND b.status = 'active'
-        WHERE  p.status = 'active' AND ($cond)
-        ORDER  BY p.created_at DESC
-        LIMIT  4
-    ");
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll();
-
-    // If keyword search returned nothing, fall back to category-only (so user isn't
-    // left with an empty response when they search a valid category like "electronics")
-    if (empty($rows) && $cat) {
-        $stmt2 = $pdo->prepare("
-            SELECT p.id, p.name AS product_name, p.image_url AS product_image,
-                   p.price_ils, p.group_price_ils, p.category, p.min_participants,
-                   ROUND((p.price_ils - p.group_price_ils) / NULLIF(p.price_ils,0) * 100)
-                       AS discount_percent,
-                   b.business_name
-            FROM   products  p
-            JOIN   businesses b ON b.id = p.business_id AND b.status = 'active'
-            WHERE  p.status = 'active' AND p.category = ?
-            ORDER  BY p.created_at DESC
-            LIMIT  4
-        ");
-        $stmt2->execute([$cat]);
-        $rows = $stmt2->fetchAll();
-    }
-
-    return $rows;
-}
-
-/**
- * Build a plain-text summary of DB results to inject into the Groq prompt.
- * This is the only data Groq is allowed to describe — preventing hallucination.
- */
-function agent_build_context(array $groups, array $products): string {
-    $lines = [];
-
-    if (!empty($groups)) {
-        $lines[] = 'OPEN GROUP PURCHASES FOUND (' . count($groups) . '):';
-        foreach ($groups as $g) {
-            $spots   = $g['target_participants'] - $g['current_participants'];
-            $lines[] = "  • {$g['product_name']} by {$g['business_name']}: "
-                . "₪{$g['group_price_ils']} (save {$g['discount_percent']}%), "
-                . "{$g['current_participants']}/{$g['target_participants']} members, "
-                . "{$spots} spot(s) left, {$g['countdown']}";
-        }
-    }
-
-    if (!empty($products)) {
-        $lines[] = !empty($groups)
-            ? 'ALSO IN CATALOG (user can start a new group):'
-            : 'NO OPEN GROUPS. PRODUCTS IN CATALOG (user can start a group):';
-        foreach ($products as $p) {
-            $lines[] = "  • {$p['product_name']} by {$p['business_name']}: "
-                . "group price ₪{$p['group_price_ils']} (save {$p['discount_percent']}%), "
-                . "min {$p['min_participants']} members needed";
-        }
-    }
-
-    return empty($lines)
-        ? 'No matching products or open groups found in the database.'
-        : implode("\n", $lines);
-}
-
-/**
- * Load top open groups for profile/greeting mode (no keyword search).
- * Scored by: user preferences, discount, fill rate, urgency, location.
- * Returns up to 4 results with category diversity cap (max 2 per category).
- */
-function agent_profile_groups(PDO $pdo, ?float $lat, ?float $lng, array $user_cats = []): array {
-    $stmt = $pdo->prepare("
-        SELECT gp.id AS group_id, gp.product_id,
-               gp.current_participants, gp.target_participants,
-               gp.deadline, gp.city,
-               gp.lat AS group_lat, gp.lng AS group_lng,
-               p.name AS product_name, p.image_url AS product_image,
-               p.price_ils, p.group_price_ils,
                p.category, p.min_participants,
                b.business_name, b.city AS biz_city,
                b.lat AS biz_lat, b.lng AS biz_lng
@@ -388,6 +188,7 @@ function agent_profile_groups(PDO $pdo, ?float $lat, ?float $lng, array $user_ca
             'group_id'             => (int)$g['group_id'],
             'product_id'           => (int)$g['product_id'],
             'product_name'         => $g['product_name'],
+            'product_desc'         => $g['product_desc'] ?? '',
             'product_image'        => $g['product_image'],
             'business_name'        => $g['business_name'],
             'group_price_ils'      => $gprice,
@@ -417,31 +218,46 @@ function agent_profile_groups(PDO $pdo, ?float $lat, ?float $lng, array $user_ca
         if ($cat_counts[$c] <= 2) $diverse[] = $g;
     }
 
-    return array_slice($diverse, 0, 4);
+    return $diverse;
+}
+
+/**
+ * Fetch all active catalog products (regardless of open groups).
+ */
+function agent_fetch_catalog_products(PDO $pdo): array {
+    $stmt = $pdo->prepare("
+        SELECT p.id, p.name AS product_name, p.image_url AS product_image,
+               p.price_ils, p.group_price_ils, p.category, p.min_participants,
+               p.description AS product_desc,
+               ROUND((p.price_ils - p.group_price_ils) / NULLIF(p.price_ils,0) * 100) AS discount_percent,
+               b.business_name
+        FROM   products  p
+        JOIN   businesses b ON b.id = p.business_id AND b.status = 'active'
+        WHERE  p.status = 'active'
+        ORDER  BY p.created_at DESC
+    ");
+    $stmt->execute();
+    return $stmt->fetchAll();
 }
 
 /**
  * Template-based fallback used when Groq is unavailable.
  */
-function agent_fallback_reply(array $groups, array $products, array $keywords, bool $profile_mode = false): string {
-    if ($profile_mode && !empty($groups)) {
+function agent_fallback_reply(array $groups, array $products, bool $greeting = false): string {
+    if ($greeting && !empty($groups)) {
         $n = count($groups);
-        return "Hi! Here are **{$n} featured group deal" . ($n > 1 ? 's' : '') . "** you might like. 🛍️ "
-            . "Join one below to unlock the group discount — or tell me what you're looking for!";
+        return "Hi! Here are **{$n} featured group deal" . ($n > 1 ? 's' : '') . "** right now. 🛍️ "
+            . "Join one below, or tell me what you're looking for!";
     }
     if (!empty($groups)) {
         $n = count($groups);
-        return "I found **{$n} open group" . ($n > 1 ? 's' : '') . "** matching your search! 🎉 "
+        return "Found **{$n} open group" . ($n > 1 ? 's' : '') . "** for you! 🎉 "
             . "Pick one below to join and unlock the group discount.";
     }
     if (!empty($products)) {
         $n = count($products);
-        return "No open groups yet, but I found **{$n} matching product" . ($n > 1 ? 's' : '') . "** in our catalog. 💡 "
-            . "Click **\"Start a Group\"** on a card below to be the first member!";
+        return "No open groups yet, but **{$n} product" . ($n > 1 ? 's' : '') . "** in the catalog match. 💡 "
+            . "Click **\"Start a Group\"** to be the first member!";
     }
-    if (!empty($keywords)) {
-        return "I couldn't find any products or open groups matching **\"" . implode(' ', $keywords) . "\"** in SmartCart right now. "
-            . "Try a different search term, or browse all available deals.";
-    }
-    return "Tell me what product you're looking for and I'll search all open group purchases for you! 🛍️";
+    return "Tell me what product you're looking for and I'll find open group deals for you! 🛍️";
 }
