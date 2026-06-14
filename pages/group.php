@@ -258,11 +258,6 @@ include __DIR__ . '/../includes/header.php';
                         <strong style="color:#4338CA;">💳 <?= $t['group_ready_for_payment'] ?></strong>
                         <p style="font-size:12px;color:#6366F1;margin-top:4px;"><?= $t['group_ready_for_payment_desc'] ?></p>
                     </div>
-                    <?php elseif ($group['status'] === 'order_ready'): ?>
-                    <div style="background:#DCFCE7;border-radius:8px;padding:12px;margin-bottom:16px;text-align:center;">
-                        <strong style="color:#166534;">🎉 <?= $t['group_order_ready'] ?></strong>
-                        <p style="font-size:12px;color:#16A34A;margin-top:4px;"><?= $t['group_order_ready_desc'] ?></p>
-                    </div>
                     <?php elseif ($group['status'] === 'closed'): ?>
                     <div style="background:#DBEAFE;border-radius:8px;padding:12px;margin-bottom:16px;text-align:center;">
                         <strong style="color:#1D4ED8;"><?= $t['group_pay_required'] ?></strong>
