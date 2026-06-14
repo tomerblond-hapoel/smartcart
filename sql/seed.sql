@@ -36,23 +36,23 @@ INSERT INTO businesses (user_id, business_name, description, address, city, lat,
 -- ─────────────────────────────────────────────────────────
 INSERT INTO products (business_id, name, description, price_ils, group_price_ils, category, min_participants, image_url, city, lat, lng, status) VALUES
 -- TechStore Tel Aviv
-(1, 'Sony WH-1000XM5 אוזניות אלחוטיות', 'אוזניות בלוטות׳ מסדרת XM5 עם ביטול רעש מוביל בתעשייה. 30 שעות סוללה, טעינה מהירה.', 1499.00, 899.00, 'electronics', 3, '/assets/images/Sony WH-1000XM5 Wireless Headphones.jpg', 'Tel Aviv', 32.0818, 34.7738, 'active'),
-(1, 'Samsung Galaxy Watch 6', 'שעון חכם עם מסך Super AMOLED, מעקב בריאות מתקדם, GPS מובנה.', 1200.00, 750.00, 'electronics', 4, '/assets/images/Smart Home Starter Kit.jpg', 'Tel Aviv', 32.0818, 34.7738, 'active'),
-(1, 'JBL Charge 5 רמקול בלוטות׳', 'רמקול נייד עמיד במים עם סאונד עוצמתי. 20 שעות סוללה, Bluetooth 5.1.', 899.00, 540.00, 'electronics', 5, '/assets/images/JBL.jpg', 'Tel Aviv', 32.0818, 34.7738, 'active'),
+(1, 'Sony WH-1000XM5 Wireless Headphones', 'Industry-leading noise cancellation with Bluetooth 5.2. 30-hour battery life, 3-minute quick charge gives 3 hours of playback. Premium audio quality for music and calls.', 1499.00, 899.00, 'electronics', 3, '/assets/images/products/sony-wh-1000xm5-headphones.jpg', 'Tel Aviv', 32.0818, 34.7738, 'active'),
+(1, 'Samsung Galaxy Watch 6', 'Smartwatch with Super AMOLED display and advanced health tracking. Built-in GPS, heart rate monitor, sleep tracking, and 40-hour battery life. Compatible with Android and iOS.', 1200.00, 750.00, 'electronics', 4, '/assets/images/products/samsung-galaxy-watch-6.jpg', 'Tel Aviv', 32.0818, 34.7738, 'active'),
+(1, 'JBL Charge 5 Bluetooth Speaker', 'Portable waterproof speaker (IP67-rated) with powerful stereo sound and deep bass. 20-hour battery life, Bluetooth 5.1, doubles as a power bank to charge your devices.', 899.00, 540.00, 'electronics', 5, '/assets/images/products/jbl-charge-5-speaker.jpg', 'Tel Aviv', 32.0818, 34.7738, 'active'),
 -- HomeStyle Herzliya
-(2, 'Dyson V12 שואב אבק אלחוטי', 'שואב אבק אלחוטי עם טכנולוגיית זיהוי אוטומטי, 60 דקות פעולה.', 2400.00, 1290.00, 'home', 4, '/assets/images/Dyson V12 Detect Slim Vacuum.jpg', 'Herzliya', 32.1663, 34.8439, 'active'),
-(2, 'Instant Pot Duo 7-in-1', 'סיר לחץ חשמלי רב-תכליתי. 7 פונקציות: לחץ, איטי, אורז, אדים, מוקפץ, יוגורט, חם.', 599.00, 370.00, 'home', 3, '/assets/images/Instant Pot Duo 7-in-1.jpg', 'Herzliya', 32.1663, 34.8439, 'active'),
+(2, 'Dyson V12 Detect Slim Vacuum', 'Cordless stick vacuum with laser dust detection technology that reveals hidden dust. Up to 60 minutes of runtime, auto-adjusting suction, whole-machine HEPA filtration.', 2400.00, 1290.00, 'home', 4, '/assets/images/products/dyson-v12-vacuum.jpg', 'Herzliya', 32.1663, 34.8439, 'active'),
+(2, 'Instant Pot Duo 7-in-1 Electric Pressure Cooker', '7-in-1 multi-cooker: pressure cooker, slow cooker, rice cooker, steamer, sauté pan, yogurt maker, and food warmer. 6-quart capacity, saves up to 70% cooking time.', 599.00, 370.00, 'home', 3, '/assets/images/products/instant-pot-duo-7-in-1.jpg', 'Herzliya', 32.1663, 34.8439, 'active'),
 -- SportZone Haifa
-(3, 'Nike Air Max 270 נעלי ספורט', 'נעלי ריצה בעיצוב אייר מקס. נוח לשימוש יומיומי ואימונים.', 599.00, 390.00, 'sports', 5, '/assets/images/Nike Air Max 270 Running Shoes.jpg', 'Haifa', 32.8200, 34.9990, 'active'),
-(3, 'סט מזרן יוגה פרמיום', 'סט מזרן יוגה מקצועי עם קוביות ורצועה. עובי 6mm, נגד החלקה.', 299.00, 210.00, 'sports', 4, '/assets/images/Premium Yoga Mat Set.jpg', 'Haifa', 32.8200, 34.9990, 'active'),
+(3, 'Nike Air Max 270 Running Shoes', 'Everyday running shoes featuring the tallest Max Air heel unit for all-day comfort. Breathable mesh upper, responsive foam cushioning, available in multiple colors and sizes.', 599.00, 390.00, 'sports', 5, '/assets/images/products/nike-air-max-270-shoes.jpg', 'Haifa', 32.8200, 34.9990, 'active'),
+(3, 'Premium Yoga Mat Set', 'Complete yoga set for all levels: 6mm thick non-slip mat with alignment lines, two foam blocks for stability, and an adjustable stretch strap. Lightweight and easy to carry.', 299.00, 210.00, 'sports', 4, '/assets/images/products/premium-yoga-mat-set.jpg', 'Haifa', 32.8200, 34.9990, 'active'),
 -- FreshBox Jerusalem
-(4, 'Organic Coffee Sampler Box', 'מארז קפה אורגני 6 זנים שונים מרחבי העולם. 250 גרם כל אחד, קלייה טרייה.', 199.00, 149.00, 'food', 8, '/assets/images/Organic Coffee Sampler Box.jpg', 'Jerusalem', 31.7844, 35.2132, 'active'),
+(4, 'Organic Coffee Sampler Box', '6 single-origin organic coffee varieties from Ethiopia, Colombia, Brazil, Guatemala, Peru, and Kenya. 250g per bag, freshly roasted and vacuum-sealed for peak flavor.', 199.00, 149.00, 'food', 8, '/assets/images/products/organic-coffee-sampler-box.jpg', 'Jerusalem', 31.7844, 35.2132, 'active'),
 -- BookCorner Ramat Gan
-(5, 'Complete Python Programming Course', 'קורס פייתון מלא לשולחן העבודה. מתאים למתחילים ומתקדמים. 600+ עמודים.', 199.00, 119.00, 'books', 6, '/assets/images/Complete Python Programming Course (Book).jpg', 'Ramat Gan', 32.0684, 34.8248, 'active'),
+(5, 'Complete Python Programming Course (Book)', 'Comprehensive Python guide for beginners to advanced developers. 600+ pages covering core syntax, data structures, OOP, web scraping, data analysis, and 10 real-world projects.', 199.00, 119.00, 'books', 6, '/assets/images/products/python-programming-book.jpg', 'Ramat Gan', 32.0684, 34.8248, 'active'),
 -- GlowUp Netanya
-(6, 'Natural Skincare Discovery Set', 'ערכת טיפוח טבעי מלאה: קרם פנים, סרום, תחליב גוף וסבון. ללא פרבנים.', 299.00, 200.00, 'beauty', 5, '/assets/images/Natural Skincare Discovery Set.jpg', 'Netanya', 32.3215, 34.8533, 'active'),
+(6, 'Natural Skincare Discovery Set', 'Complete natural skincare routine in one box: hydrating face cream, vitamin C brightening serum, nourishing body lotion, and gentle natural soap. Paraben-free, dermatologist tested.', 299.00, 200.00, 'beauty', 5, '/assets/images/products/natural-skincare-set.jpg', 'Netanya', 32.3215, 34.8533, 'active'),
 -- FashionHub Beer Sheva
-(7, 'Handmade Leather Messenger Bag', 'תיק עור בעבודת יד. עיצוב קלאסי, מתאים ללפטופ עד 15 אינץ׳. 3 צבעים.', 599.00, 430.00, 'fashion', 6, '/assets/images/Handmade Leather Messenger Bag.jpg', 'Beer Sheva', 31.2460, 34.7960, 'active');
+(7, 'Handmade Leather Messenger Bag', 'Genuine full-grain leather messenger bag handcrafted by artisans. Padded laptop compartment fits up to 15 inches, multiple organizer pockets, adjustable shoulder strap. Available in 3 colors.', 599.00, 430.00, 'fashion', 6, '/assets/images/products/leather-messenger-bag.jpg', 'Beer Sheva', 31.2460, 34.7960, 'active');
 
 -- ─────────────────────────────────────────────────────────
 -- GROUP PURCHASES (various fill levels, all Israeli cities)
