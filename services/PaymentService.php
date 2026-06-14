@@ -127,6 +127,7 @@ class PaymentService
             'application_context' => [
                 'brand_name'          => 'SmartCart',
                 'user_action'         => 'PAY_NOW',
+                'landing_page'        => 'GUEST_CHECKOUT',
                 'return_url'          => $return_url,
                 'cancel_url'          => $cancel_url,
                 'shipping_preference' => 'NO_SHIPPING',
