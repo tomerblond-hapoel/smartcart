@@ -323,9 +323,9 @@ include __DIR__ . '/../includes/header.php';
                             <br><a href="<?= APP_URL ?>/pages/my-orders.php" style="font-size:12px;color:#16A34A;margin-top:4px;display:inline-block;">View your order →</a>
                         </div>
 
-                        <?php elseif ($my_payment && $my_payment['status'] === 'pending' && !empty($my_payment['payment_url'])): ?>
-                        <!-- Pending payment — show Pay Now button -->
-                        <a href="<?= htmlspecialchars($my_payment['payment_url']) ?>"
+                        <?php elseif ($my_payment && in_array($my_payment['status'], ['pending'], true)): ?>
+                        <!-- Pending payment — always go through redirect to get a fresh PayPal order -->
+                        <a href="<?= APP_URL ?>/api/payments/pay_redirect.php?payment_id=<?= (int)$my_payment['id'] ?>"
                            class="btn btn-primary btn-full btn-lg"
                            style="text-align:center;display:block;text-decoration:none;"
                            id="pay-now-btn">
@@ -336,14 +336,15 @@ include __DIR__ . '/../includes/header.php';
                         </p>
 
                         <?php elseif ($my_payment && $my_payment['status'] === 'failed'): ?>
-                        <!-- Failed payment — retry -->
+                        <!-- Failed payment — retry via fresh PayPal order -->
                         <div style="background:#FEF3C7;border-radius:8px;padding:12px;margin-bottom:12px;text-align:center;">
                             <span style="color:#92400E;font-weight:600;">⚠️ <?= $t['payment_failed_retry'] ?></span>
                         </div>
-                        <button class="btn btn-primary btn-full btn-lg" id="retry-payment-btn"
-                                data-group-id="<?= $group_id ?>">
+                        <a href="<?= APP_URL ?>/api/payments/pay_redirect.php?payment_id=<?= (int)$my_payment['id'] ?>"
+                           class="btn btn-primary btn-full btn-lg"
+                           style="text-align:center;display:block;text-decoration:none;">
                             🔄 <?= $t['payment_retry'] ?>
-                        </button>
+                        </a>
 
                         <?php else: ?>
                         <!-- Payment record not yet generated (should be brief) -->
