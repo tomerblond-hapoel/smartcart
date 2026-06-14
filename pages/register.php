@@ -94,6 +94,27 @@ include __DIR__ . '/../includes/header.php';
                     <input type="tel" id="phone" name="phone" class="form-control" placeholder="05X-XXXXXXX">
                 </div>
 
+                <!-- Category Preferences (customer only) -->
+                <div id="pref-section" style="display:none;">
+                    <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+                    <p style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--gray-800);">What are you interested in? <span style="font-weight:400;color:var(--gray-500)">(optional)</span></p>
+                    <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px;">We'll personalize your group deal recommendations.</p>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+                        <?php
+                        $reg_cats  = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive'];
+                        $reg_icons = ['electronics'=>'💻','home'=>'🏠','fashion'=>'👗','food'=>'🍎','sports'=>'⚽','beauty'=>'💄','toys'=>'🧸','books'=>'📚','automotive'=>'🚗'];
+                        foreach ($reg_cats as $rc): ?>
+                        <label style="display:flex;flex-direction:column;align-items:center;padding:10px 6px;border:2px solid var(--border);border-radius:10px;cursor:pointer;font-size:12px;font-weight:500;text-align:center;transition:all .15s;user-select:none;"
+                               class="cat-chip-label" for="pref-<?= $rc ?>">
+                            <input type="checkbox" id="pref-<?= $rc ?>" name="preferred_categories[]" value="<?= $rc ?>"
+                                   style="display:none;" class="cat-chip-input">
+                            <span style="font-size:22px;line-height:1;margin-bottom:4px;"><?= $reg_icons[$rc] ?></span>
+                            <span><?= $t['cat_' . $rc] ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
                 <!-- Business-only fields -->
                 <div id="business-fields" style="display:<?= $preselected_role === 'business' ? 'block' : 'none' ?>;">
                     <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
@@ -155,6 +176,7 @@ if (step1) {
             form.style.display  = 'block';
             document.getElementById('business-fields').style.display = role === 'business' ? 'block' : 'none';
             document.getElementById('business_name').required = role === 'business';
+            document.getElementById('pref-section').style.display = role === 'customer' ? 'block' : 'none';
             document.body.classList.remove('theme-customer','theme-business');
             document.body.classList.add('theme-' + role);
         });
@@ -162,6 +184,17 @@ if (step1) {
         card.addEventListener('mouseleave', () => { card.style.borderColor = 'var(--border)'; card.style.background = 'white'; });
     });
 }
+
+// Category chip toggle: highlight selected state
+document.addEventListener('change', function(e) {
+    if (!e.target.classList.contains('cat-chip-input')) return;
+    const label = e.target.closest('label');
+    if (label) {
+        label.style.borderColor  = e.target.checked ? 'var(--primary)' : 'var(--border)';
+        label.style.background   = e.target.checked ? 'var(--primary-50)' : '';
+        label.style.color        = e.target.checked ? 'var(--primary)' : '';
+    }
+});
 
 const backBtn = document.getElementById('back-btn');
 if (backBtn) {
@@ -171,9 +204,11 @@ if (backBtn) {
     });
 }
 
-// If role pre-selected via URL, ensure business_name is required server-side validation matches
+// If role pre-selected via URL, show the right sections immediately
 <?php if ($preselected_role === 'business'): ?>
 document.getElementById('business_name').required = true;
+<?php elseif ($preselected_role === 'customer'): ?>
+document.getElementById('pref-section').style.display = 'block';
 <?php endif; ?>
 
 form.addEventListener('submit', async function(e) {
@@ -191,6 +226,10 @@ form.addEventListener('submit', async function(e) {
 
     const data = Object.fromEntries(fd);
     delete data.confirm_password;
+    // Object.fromEntries keeps only the last checkbox value — collect all manually
+    const prefCats = [...this.querySelectorAll('input[name="preferred_categories[]"]:checked')].map(i => i.value);
+    if (prefCats.length) data.preferred_categories = prefCats;
+    else delete data['preferred_categories[]']; // clean up stray key if any
 
     try {
         const res  = await fetch('<?= APP_URL ?>/api/auth.php?action=register', {

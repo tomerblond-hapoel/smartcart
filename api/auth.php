@@ -173,6 +173,14 @@ function handle_register(array $input): void {
     $role     = trim($input['role']     ?? 'customer');
     $city     = trim($input['city']     ?? '');
     $phone    = trim($input['phone']    ?? '');
+    $lat      = isset($input['lat']) && $input['lat'] !== '' ? (float)$input['lat'] : null;
+    $lng      = isset($input['lng']) && $input['lng'] !== '' ? (float)$input['lng'] : null;
+
+    // Preferred categories (customer only, optional)
+    $allowed_cats  = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
+    $pref_cats_raw = $input['preferred_categories'] ?? [];
+    if (!is_array($pref_cats_raw)) $pref_cats_raw = [];
+    $pref_cats = array_values(array_filter($pref_cats_raw, fn($c) => in_array($c, $allowed_cats, true)));
 
     // Business-specific fields
     $business_name     = trim($input['business_name']     ?? '');
@@ -215,20 +223,25 @@ function handle_register(array $input): void {
         return;
     }
 
+    // onboarding_complete = 1 when customer selected at least one preference
+    $onboarding = ($role === 'customer' && !empty($pref_cats)) ? 1 : 0;
+
     $pdo->beginTransaction();
     try {
         $hash = password_hash($password, PASSWORD_BCRYPT);
         $stmt = $pdo->prepare(
-            'INSERT INTO users (email, password_hash, full_name, role, phone, city) VALUES (?, ?, ?, ?, ?, ?)'
+            'INSERT INTO users (email, password_hash, full_name, role, phone, city, lat, lng, preferred_categories, onboarding_complete)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$email, $hash, $name, $role, $phone, $city]);
+        $stmt->execute([$email, $hash, $name, $role, $phone ?: null, $city ?: null,
+                        $lat, $lng, json_encode($pref_cats), $onboarding]);
         $user_id = (int)$pdo->lastInsertId();
 
         if ($role === 'business') {
             $stmt = $pdo->prepare(
                 'INSERT INTO businesses (user_id, business_name, phone, category, city) VALUES (?, ?, ?, ?, ?)'
             );
-            $stmt->execute([$user_id, $business_name, $business_phone, $business_category, $city]);
+            $stmt->execute([$user_id, $business_name, $business_phone ?: null, $business_category, $city ?: null]);
         }
 
         $pdo->commit();
@@ -296,26 +309,52 @@ function handle_update_profile(array $input): void {
         echo json_encode(['error' => 'Not authenticated']);
         return;
     }
-    $user_id = $_SESSION['user_id'];
-    $name    = trim($input['full_name'] ?? '');
-    $phone   = trim($input['phone']    ?? '');
-    $city    = trim($input['city']     ?? '');
-    $address = trim($input['address']  ?? '');
-    $lat     = isset($input['lat'])  ? (float)$input['lat']  : null;
-    $lng     = isset($input['lng'])  ? (float)$input['lng']  : null;
-    $cats    = $input['preferred_categories'] ?? [];
+    $user_id = (int)$_SESSION['user_id'];
+    $pdo     = getPDO();
 
-    if (is_array($cats)) {
-        $allowed = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
-        $cats = array_values(array_filter($cats, fn($c) => in_array($c, $allowed)));
+    // Load current row so we never accidentally null a NOT NULL column
+    $cur_stmt = $pdo->prepare('SELECT full_name, phone, city, address, lat, lng, preferred_categories FROM users WHERE id = ?');
+    $cur_stmt->execute([$user_id]);
+    $cur = $cur_stmt->fetch();
+    if (!$cur) {
+        http_response_code(404);
+        echo json_encode(['error' => 'User not found']);
+        return;
     }
 
-    $pdo  = getPDO();
-    $stmt = $pdo->prepare(
-        'UPDATE users SET full_name=?, phone=?, city=?, address=?, lat=?, lng=?, preferred_categories=?, onboarding_complete=1
-         WHERE id=?'
-    );
-    $stmt->execute([$name ?: null, $phone ?: null, $city ?: null, $address ?: null, $lat, $lng, json_encode($cats), $user_id]);
+    // Only update a field when it is actually present in the request; fall back to current DB value.
+    $name    = (array_key_exists('full_name', $input) && trim($input['full_name']) !== '')
+               ? trim($input['full_name'])
+               : $cur['full_name'];                      // NOT NULL — keep current
+    $phone   = array_key_exists('phone',   $input) ? (trim($input['phone'])   ?: null) : $cur['phone'];
+    $city    = array_key_exists('city',    $input) ? (trim($input['city'])    ?: null) : $cur['city'];
+    $address = array_key_exists('address', $input) ? (trim($input['address']) ?: null) : $cur['address'];
+    $lat     = (array_key_exists('lat', $input) && $input['lat'] !== '')
+               ? (float)$input['lat']
+               : ($cur['lat'] !== null ? (float)$cur['lat'] : null);
+    $lng     = (array_key_exists('lng', $input) && $input['lng'] !== '')
+               ? (float)$input['lng']
+               : ($cur['lng'] !== null ? (float)$cur['lng'] : null);
+
+    if (array_key_exists('preferred_categories', $input)) {
+        $cats_raw = $input['preferred_categories'];
+        if (!is_array($cats_raw)) $cats_raw = [];
+        $allowed = ['electronics','home','fashion','food','sports','beauty','toys','books','automotive','other'];
+        $cats = array_values(array_filter($cats_raw, fn($c) => is_string($c) && in_array($c, $allowed, true)));
+    } else {
+        $cats = json_decode($cur['preferred_categories'] ?? '[]', true) ?: [];
+    }
+
+    try {
+        $pdo->prepare(
+            'UPDATE users SET full_name=?, phone=?, city=?, address=?, lat=?, lng=?, preferred_categories=?, onboarding_complete=1
+             WHERE id=?'
+        )->execute([$name, $phone, $city, $address, $lat, $lng, json_encode($cats), $user_id]);
+    } catch (\PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to update profile. Please try again.']);
+        return;
+    }
 
     $_SESSION['user_name'] = $name;
     echo json_encode(['success' => true]);
