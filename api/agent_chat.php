@@ -30,7 +30,7 @@ $user_id = require_auth();
 $pdo     = getPDO();
 
 // ── Load user ─────────────────────────────────────────────────────────────────
-$ustmt = $pdo->prepare('SELECT full_name, lat, lng FROM users WHERE id = ? AND is_active = 1');
+$ustmt = $pdo->prepare('SELECT full_name, lat, lng, preferred_categories FROM users WHERE id = ? AND is_active = 1');
 $ustmt->execute([$user_id]);
 $user = $ustmt->fetch();
 if (!$user) json_response(['error' => 'User not found'], 404);
@@ -38,6 +38,7 @@ if (!$user) json_response(['error' => 'User not found'], 404);
 $user_name = explode(' ', trim($user['full_name'] ?? 'there'))[0];
 $user_lat  = $user['lat'] !== null ? (float)$user['lat'] : null;
 $user_lng  = $user['lng'] !== null ? (float)$user['lng'] : null;
+$user_cats = json_decode($user['preferred_categories'] ?? '[]', true) ?: [];
 
 // ── Parse request ─────────────────────────────────────────────────────────────
 $body    = get_json_body();
@@ -70,7 +71,7 @@ $groups   = [];
 $products = [];
 
 if (!empty($keywords)) {
-    $groups   = agent_search_groups($pdo, $keywords, $user_lat, $user_lng);
+    $groups   = agent_search_groups($pdo, $keywords, $user_lat, $user_lng, $user_cats);
     // Always search products too — needed for create-group intent & no-group fallback
     $products = agent_search_products($pdo, $keywords, $auto_category);
 }
@@ -130,7 +131,7 @@ function agent_normalize(string $q): array {
  * Search open group purchases and rank by relevance + quality score.
  * Returns up to 5 best matches; empty array when no keywords match any product name.
  */
-function agent_search_groups(PDO $pdo, array $keywords, ?float $lat, ?float $lng): array {
+function agent_search_groups(PDO $pdo, array $keywords, ?float $lat, ?float $lng, array $user_cats = []): array {
     $stmt = $pdo->prepare("
         SELECT gp.id AS group_id, gp.product_id,
                gp.current_participants, gp.target_participants,
@@ -195,6 +196,11 @@ function agent_search_groups(PDO $pdo, array $keywords, ?float $lat, ?float $lng
         $days_left = days_until($g['deadline']);
         $score    += $days_left <= 3 ? 10 : ($days_left <= 7 ? 5 : 0);
 
+        // Preference boost: user has saved this category as a preference
+        if (!empty($user_cats) && in_array($g['category'], $user_cats, true)) {
+            $score += 10;
+        }
+
         $dist = null;
         if ($lat !== null && $lng !== null) {
             $glat = $g['group_lat'] ?? $g['biz_lat'];
@@ -246,10 +252,6 @@ function agent_search_products(PDO $pdo, array $keywords, ?string $cat): array {
         $params[] = "%$kw%";
     }
     $cond = implode(' OR ', $parts);
-    if ($cat) {
-        $cond    .= ' OR p.category = ?';
-        $params[] = $cat;
-    }
 
     $stmt = $pdo->prepare("
         SELECT p.id, p.name AS product_name, p.image_url AS product_image,
@@ -264,7 +266,28 @@ function agent_search_products(PDO $pdo, array $keywords, ?string $cat): array {
         LIMIT  4
     ");
     $stmt->execute($params);
-    return $stmt->fetchAll();
+    $rows = $stmt->fetchAll();
+
+    // If keyword search returned nothing, fall back to category-only (so user isn't
+    // left with an empty response when they search a valid category like "electronics")
+    if (empty($rows) && $cat) {
+        $stmt2 = $pdo->prepare("
+            SELECT p.id, p.name AS product_name, p.image_url AS product_image,
+                   p.price_ils, p.group_price_ils, p.category, p.min_participants,
+                   ROUND((p.price_ils - p.group_price_ils) / NULLIF(p.price_ils,0) * 100)
+                       AS discount_percent,
+                   b.business_name
+            FROM   products  p
+            JOIN   businesses b ON b.id = p.business_id AND b.status = 'active'
+            WHERE  p.status = 'active' AND p.category = ?
+            ORDER  BY p.created_at DESC
+            LIMIT  4
+        ");
+        $stmt2->execute([$cat]);
+        $rows = $stmt2->fetchAll();
+    }
+
+    return $rows;
 }
 
 /**

@@ -359,6 +359,21 @@ usort($results, function ($a, $b) {
         : $b['fill_percent'] - $a['fill_percent'];
 });
 
+// In profile mode: apply category diversity cap (max 2 per category)
+// Prevents one high-scoring category from monopolising all recommendation slots.
+if (!$query_mode) {
+    $cat_counts = [];
+    $diverse    = [];
+    foreach ($results as $r) {
+        $c = $r['category'] ?? 'other';
+        $cat_counts[$c] = ($cat_counts[$c] ?? 0) + 1;
+        if ($cat_counts[$c] <= 2) {
+            $diverse[] = $r;
+        }
+    }
+    $results = $diverse;
+}
+
 // Cap: 3 results in query mode, $limit in profile mode
 $effective_limit = ($query_mode && !empty($query_keywords)) ? 3 : $limit;
 $results = array_slice($results, 0, $effective_limit);
