@@ -79,6 +79,8 @@ function normalize_query(string $q): array {
     return array_values(array_unique($out));
 }
 
+$groq_active = false;  // did Groq successfully extract keywords?
+
 if ($query_mode) {
     $query_keywords = normalize_query($raw_query);
 
@@ -91,6 +93,7 @@ if ($query_mode) {
         if ($groq['category'] !== null) {
             $auto_category = $groq['category'];
         }
+        $groq_active = true;
     }
 
     if (empty($query_keywords)) {
@@ -407,6 +410,7 @@ echo json_encode([
         'query_mode'         => $query_mode,
         'query_keywords'     => $query_keywords,
         'auto_category'      => $auto_category,
+        'groq_active'        => $groq_active,
         'total_found'        => count($results),
         'suggested_products' => $suggested_products,
     ],

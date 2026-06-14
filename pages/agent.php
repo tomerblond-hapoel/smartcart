@@ -625,10 +625,21 @@ function renderSuggestedProducts(products) {
 
 /* ── Natural language response builder ─────────────────── */
 function buildReply(meta, results, query) {
-    const kws  = (meta && meta.query_keywords) ? meta.query_keywords : [];
-    const cat  = meta ? meta.auto_category : null;
-    const qMode = meta ? meta.query_mode : false;
-    const qDisp = esc(query.trim());
+    const kws       = (meta && meta.query_keywords) ? meta.query_keywords : [];
+    const cat       = meta ? meta.auto_category : null;
+    const qMode     = meta ? meta.query_mode : false;
+    const groqActive = meta ? meta.groq_active : false;
+    const qDisp     = esc(query.trim());
+
+    /* ── User typed something but query couldn't be understood ── */
+    if (query.trim() && !qMode && !groqActive) {
+        return {
+            text: `Sorry, I couldn't understand <strong>"${qDisp}"</strong>. 😕<br><br>The AI translator isn't available right now. Try searching in English — for example: <em>"headphones"</em>, <em>"coffee machine"</em>, <em>"running shoes"</em>.`,
+            actions: [
+                {label: '🛍️ Browse all deals', href: SC_APP_URL + '/pages/browse.php'},
+            ]
+        };
+    }
 
     /* ── Profile-based (no query) ── */
     if (!qMode) {

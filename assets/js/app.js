@@ -157,7 +157,8 @@ async function loadAgentRecommendations(container, userId, limit, maxDistKm) {
     if (maxDistKm) params.append('max_distance_km', maxDistKm);
 
     try {
-        const results = await api(`/api/agent.php?${params}`);
+        const data = await api(`/api/agent.php?${params}`);
+        const results = Array.isArray(data) ? data : (data.results || []);
         if (!results.length) {
             container.innerHTML = '<p class="text-muted text-center" style="padding:20px">No recommendations found. Try expanding your search distance or adding more preferred categories in your profile.</p>';
             return;
