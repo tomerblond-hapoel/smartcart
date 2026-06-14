@@ -431,6 +431,13 @@ main.main-content {
     color: var(--gray-400);
     margin-top: 7px;
 }
+/* Links inside AI bubbles */
+.sc-link {
+    color: var(--primary);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
 </style>
 
 <div class="sc-chat">
@@ -479,133 +486,119 @@ main.main-content {
 <?php include __DIR__ . '/../includes/footer.php'; ?>
 
 <script>
-/* ── Constants ─────────────────────────────────────────── */
+/* ── Constants ───────────────────────────────────────────── */
 const SC_USER_ID  = <?= $user_id ?>;
 const SC_APP_URL  = '<?= APP_URL ?>';
 const SC_NAME     = '<?= addslashes($user_first_name) ?>';
 const SC_HAS_PREF = <?= $has_prefs ? 'true' : 'false' ?>;
 
-/* ── Helpers ────────────────────────────────────────────── */
+/* ── State ───────────────────────────────────────────────── */
+let chatHistory   = [];    // [{role:'user'|'assistant', content:'...'}]
+let pendingAction = null;  // {type:'create_group', product_id, product_name, min_participants, target?, step}
+let userLat = null, userLng = null;
+let isBusy = false;
+
+/* ── Helpers ─────────────────────────────────────────────── */
 function esc(s) {
-    return String(s)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function md(t) {
     return String(t)
-        .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g,'<em>$1</em>')
-        .replace(/\n/g,'<br>');
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" class="sc-link">$1</a>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
 }
-/* Returns a safe image src whether the DB stores a full URL or a relative path */
 function imgSrc(url) {
     if (!url) return '';
     return (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//'))
-        ? url
-        : SC_APP_URL + url;
+        ? url : SC_APP_URL + url;
 }
 function catEmoji(c) {
     return {electronics:'💻',home:'🏠',fashion:'👗',food:'🍎',sports:'⚽',beauty:'💄',toys:'🧸',books:'📚',automotive:'🚗'}[c] || '📦';
 }
-function nowTime() {
-    return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-}
-function scrollEnd() {
-    const el = document.getElementById('sc-messages');
-    if (el) el.scrollTop = el.scrollHeight + 999;
-}
+function nowTime() { return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+function scrollEnd() { const el = document.getElementById('sc-messages'); if (el) el.scrollTop = el.scrollHeight + 999; }
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/* ── Render a message row ───────────────────────────────── */
+/* ── Message row ─────────────────────────────────────────── */
 function addMsg(role, html, opts = {}) {
     const wrap = document.getElementById('sc-messages');
     const row  = document.createElement('div');
     row.className = 'sc-msg ' + role + (opts.tail ? ' group-tail' : '');
-
-    const avHTML = role === 'ai'
-        ? `<div class="sc-av">✦</div>`
-        : `<div class="sc-av">👤</div>`;
-
+    const avHTML     = role === 'ai' ? `<div class="sc-av">✦</div>` : `<div class="sc-av">👤</div>`;
     const bubbleHTML = role === 'ai'
         ? `<div class="sc-bubble-ai">${html}</div>`
         : `<div class="sc-bubble-user">${esc(html)}</div>`;
-
-    row.innerHTML = avHTML
-        + `<div class="sc-bubble-wrap">${bubbleHTML}<span class="sc-time">${nowTime()}</span></div>`;
-
+    row.innerHTML = avHTML + `<div class="sc-bubble-wrap">${bubbleHTML}<span class="sc-time">${nowTime()}</span></div>`;
     wrap.appendChild(row);
     scrollEnd();
     return row;
 }
-
-/* ── Typing indicator ───────────────────────────────────── */
 function showTyping() {
     const wrap = document.getElementById('sc-messages');
     const row  = document.createElement('div');
     row.className = 'sc-msg ai sc-typing';
     row.id = 'sc-typing';
     row.innerHTML = `<div class="sc-av">✦</div>
-        <div class="sc-bubble-wrap">
-            <div class="sc-bubble-ai">
-                <div class="sc-typing-dots"><span></span><span></span><span></span></div>
-            </div>
-        </div>`;
+        <div class="sc-bubble-wrap"><div class="sc-bubble-ai">
+            <div class="sc-typing-dots"><span></span><span></span><span></span></div>
+        </div></div>`;
     wrap.appendChild(row);
     scrollEnd();
 }
-function hideTyping() {
-    const el = document.getElementById('sc-typing');
-    if (el) el.remove();
-}
+function hideTyping() { const el = document.getElementById('sc-typing'); if (el) el.remove(); }
 
-/* ── Product cards ──────────────────────────────────────── */
-function renderCards(results) {
-    if (!results || !results.length) return '';
-    const items = results.slice(0, 3).map(r => {
-        const fillColor = r.fill_percent >= 75 ? 'var(--green)' : r.fill_percent >= 40 ? 'var(--orange)' : 'var(--primary)';
-        const img = r.product_image
-            ? `<img class="sc-card-img" src="${imgSrc(r.product_image)}" alt="${esc(r.product_name)}" loading="lazy">`
-            : `<div class="sc-card-img-placeholder">${catEmoji(r.category)}</div>`;
-        const reason = r.match_reason
-            ? `<div class="sc-card-reason">🎯 ${esc(r.match_reason)}</div>`
-            : '';
-        return `
-        <div class="sc-card">
+/* ── Group cards — open groups with in-chat Join button ──── */
+function renderGroupCards(groups) {
+    if (!groups || !groups.length) return '';
+    const items = groups.slice(0, 5).map(g => {
+        const fill      = g.fill_percent || 0;
+        const fillColor = fill >= 75 ? 'var(--green)' : fill >= 40 ? 'var(--orange)' : 'var(--primary)';
+        const spots     = g.target_participants - g.current_participants;
+        const img       = g.product_image
+            ? `<img class="sc-card-img" src="${imgSrc(g.product_image)}" alt="${esc(g.product_name)}" loading="lazy">`
+            : `<div class="sc-card-img-placeholder">${catEmoji(g.category)}</div>`;
+        return `<div class="sc-card">
             ${img}
             <div class="sc-card-body">
-                <div class="sc-card-title">${esc(r.product_name)}</div>
-                <div class="sc-card-biz">${esc(r.business_name)}${r.city ? ' · ' + esc(r.city) : ''}</div>
-                ${reason}
+                <div class="sc-card-title">${esc(g.product_name)}</div>
+                <div class="sc-card-biz">${esc(g.business_name)}${g.city ? ' · ' + esc(g.city) : ''}</div>
                 <div class="sc-card-price-row">
-                    <span class="sc-card-price">₪${r.group_price_ils.toLocaleString()}</span>
-                    <span class="sc-card-orig">₪${r.price_ils.toLocaleString()}</span>
-                    <span class="sc-card-badge">-${r.discount_percent}%</span>
+                    <span class="sc-card-price">₪${parseFloat(g.group_price_ils).toLocaleString()}</span>
+                    <span class="sc-card-orig">₪${parseFloat(g.price_ils).toLocaleString()}</span>
+                    <span class="sc-card-badge">-${g.discount_percent}%</span>
                 </div>
                 <div class="sc-card-fill">
                     <div class="sc-card-fill-bar">
-                        <div class="sc-card-fill-bar-inner" style="width:${r.fill_percent}%;background:${fillColor};"></div>
+                        <div class="sc-card-fill-bar-inner" style="width:${fill}%;background:${fillColor};"></div>
                     </div>
                     <div class="sc-card-fill-meta">
-                        <span>${r.current_participants}/${r.target_participants} joined</span>
-                        <span>${r.countdown}</span>
+                        <span>${g.current_participants}/${g.target_participants} joined · ${spots} spot${spots !== 1 ? 's' : ''} left</span>
+                        <span>${g.countdown}</span>
                     </div>
                 </div>
-                <a href="${SC_APP_URL}/pages/group.php?id=${r.group_id}" class="sc-card-btn">Join Group →</a>
+                <button class="sc-card-btn sc-join-btn"
+                        data-group-id="${g.group_id}"
+                        data-product-name="${esc(g.product_name)}">
+                    Join Group →
+                </button>
             </div>
         </div>`;
     }).join('');
     return `<div class="sc-cards">${items}</div>`;
 }
 
-/* ── Suggested products (no open group → start one) ────── */
-function renderSuggestedProducts(products) {
+/* ── Product cards — no open group, offer to start one ───── */
+function renderProductCards(products) {
     if (!products || !products.length) return '';
-    const items = products.map(p => {
+    const items = products.slice(0, 4).map(p => {
         const disc = parseInt(p.discount_percent) || 0;
-        return `
-        <div class="sc-card">
-            ${p.product_image
-                ? `<img class="sc-card-img" src="${imgSrc(p.product_image)}" alt="${esc(p.product_name)}" loading="lazy">`
-                : `<div class="sc-card-img-placeholder">${catEmoji(p.category)}</div>`}
+        const img  = p.product_image
+            ? `<img class="sc-card-img" src="${imgSrc(p.product_image)}" alt="${esc(p.product_name)}" loading="lazy">`
+            : `<div class="sc-card-img-placeholder">${catEmoji(p.category)}</div>`;
+        return `<div class="sc-card">
+            ${img}
             <div class="sc-card-body">
                 <div class="sc-card-title">${esc(p.product_name)}</div>
                 <div class="sc-card-biz">${esc(p.business_name)}</div>
@@ -614,177 +607,253 @@ function renderSuggestedProducts(products) {
                     <span class="sc-card-orig">₪${parseFloat(p.price_ils).toLocaleString()}</span>
                     ${disc > 0 ? `<span class="sc-card-badge">-${disc}%</span>` : ''}
                 </div>
-                <a href="${SC_APP_URL}/pages/product.php?id=${p.id}" class="sc-card-btn sc-card-btn-start">
+                <div style="font-size:11px;color:var(--gray-500);margin:4px 0 8px;">
+                    Min ${p.min_participants} members to activate
+                </div>
+                <button class="sc-card-btn sc-card-btn-start sc-create-btn"
+                        data-product-id="${p.id}"
+                        data-product-name="${esc(p.product_name)}"
+                        data-min="${p.min_participants}">
                     ✦ Start a Group
-                </a>
+                </button>
             </div>
         </div>`;
     }).join('');
     return `<div class="sc-cards">${items}</div>`;
 }
 
-/* ── Natural language response builder ─────────────────── */
-function buildReply(meta, results, query) {
-    const kws       = (meta && meta.query_keywords) ? meta.query_keywords : [];
-    const cat       = meta ? meta.auto_category : null;
-    const qMode     = meta ? meta.query_mode : false;
-    const groqActive = meta ? meta.groq_active : false;
-    const qDisp     = esc(query.trim());
+/* ── In-chat button actions (Join + Start a Group) ────────── */
+document.getElementById('sc-messages').addEventListener('click', async function (e) {
 
-    /* ── User typed something but query couldn't be understood ── */
-    if (query.trim() && !qMode && !groqActive) {
-        return {
-            text: `Sorry, I couldn't understand <strong>"${qDisp}"</strong>. 😕<br><br>The AI translator isn't available right now. Try searching in English — for example: <em>"headphones"</em>, <em>"coffee machine"</em>, <em>"running shoes"</em>.`,
-            actions: [
-                {label: '🛍️ Browse all deals', href: SC_APP_URL + '/pages/browse.php'},
-            ]
-        };
-    }
+    /* ── Join group ── */
+    const joinBtn = e.target.closest('.sc-join-btn');
+    if (joinBtn && !joinBtn.disabled) {
+        e.preventDefault();
+        const groupId  = joinBtn.dataset.groupId;
+        const prodName = joinBtn.dataset.productName;
+        joinBtn.disabled = true;
+        joinBtn.textContent = 'Joining…';
 
-    /* ── Profile-based (no query) ── */
-    if (!qMode) {
-        if (!results.length) {
-            return {
-                text: `I checked all open groups based on your profile preferences, but nothing matches your interests right now. 😕<br><br>Try searching for a specific product above, or update your profile with more categories!`,
-                actions: [
-                    {label:'🛍️ Browse all groups', href: SC_APP_URL + '/pages/browse.php'},
-                    {label:'⚙️ Update my preferences', href: SC_APP_URL + '/pages/profile.php'},
-                ]
-            };
+        try {
+            const res  = await fetch(`${SC_APP_URL}/api/groups.php?action=join&group_id=${groupId}`, {
+                method: 'POST', credentials: 'same-origin',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to join');
+
+            joinBtn.textContent = '✓ Joined!';
+            joinBtn.style.background = 'var(--green)';
+
+            if (data.group_filled) {
+                /* Group is full — show Pay Now button immediately */
+                const payEl = document.createElement('a');
+                payEl.href  = `${SC_APP_URL}/pages/group.php?id=${groupId}`;
+                payEl.className = 'sc-card-btn';
+                payEl.style.cssText = 'display:block;margin-top:6px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;text-align:center;text-decoration:none;border-radius:10px;padding:9px;font-size:13px;font-weight:600;';
+                payEl.textContent = '💳 Pay Now →';
+                joinBtn.parentElement.appendChild(payEl);
+                addMsg('ai', md(
+                    `🎉 **The group is full, ${SC_NAME}!** Your spot is reserved.\n\n`
+                    + `**You have 24 hours to complete payment.** Click "Pay Now" on the card above to secure your order.`
+                ));
+            } else {
+                const rem = data.target - data.current;
+                addMsg('ai', md(
+                    `✅ **You joined "${prodName}"!** The group now has **${data.current}/${data.target} members** — `
+                    + `${rem} more spot${rem !== 1 ? 's' : ''} needed.\n\n`
+                    + `You'll get a notification when the group fills up and payment is due.`
+                ));
+            }
+        } catch (err) {
+            joinBtn.disabled = false;
+            joinBtn.textContent = 'Join Group →';
+            addMsg('ai', md(`Sorry — couldn't join: **${esc(err.message)}**`));
         }
-        const n = results.length;
-        return {
-            text: `Based on your saved preferences, I found <strong>${n} open group${n>1?'s':''}</strong> worth joining. Here are my top picks — the more people join, the bigger the discount! 🎉`,
-        };
+        scrollEnd();
+        return;
     }
 
-    /* ── No open groups for query ── */
-    if (!results.length) {
-        const suggested = (meta && meta.suggested_products) ? meta.suggested_products : [];
+    /* ── Start a Group (opens create-group step machine) ── */
+    const createBtn = e.target.closest('.sc-create-btn');
+    if (createBtn && !createBtn.disabled) {
+        e.preventDefault();
+        createBtn.disabled    = true;
+        createBtn.textContent = '⏳ Starting…';
 
-        // Case A: product exists in catalog but no open group → offer to start one
-        if (suggested.length > 0) {
-            return {
-                text: `There's no open group for <strong>"${qDisp}"</strong> right now. 😕<br><br>But I found <strong>${suggested.length} matching product${suggested.length > 1 ? 's' : ''}</strong> in our catalog — you could start a new group and others will join! 💡`,
-                suggestedProducts: suggested,
-            };
+        pendingAction = {
+            type:             'create_group',
+            product_id:       parseInt(createBtn.dataset.productId),
+            product_name:     createBtn.dataset.productName,
+            min_participants: parseInt(createBtn.dataset.min) || 2,
+            step:             'ask_target',
+        };
+
+        await delay(250);
+        addMsg('ai', md(
+            `Let's set up a group for **${pendingAction.product_name}**! 🎉\n\n`
+            + `How many members should the group have? *(minimum: ${pendingAction.min_participants})*`
+        ));
+        scrollEnd();
+    }
+});
+
+/* ── Create group step machine ───────────────────────────── */
+async function handlePendingAction(text) {
+    const action = pendingAction;
+    if (!action || action.type !== 'create_group') { pendingAction = null; return; }
+
+    /* Step 1: ask how many members */
+    if (action.step === 'ask_target') {
+        const n = parseInt(text.replace(/\D/g, ''));
+        if (!n || n < action.min_participants) {
+            addMsg('ai', md(`Please enter a number **≥ ${action.min_participants}** (the minimum for this product).`));
+            return;
+        }
+        pendingAction.target = n;
+        pendingAction.step   = 'ask_deadline';
+        addMsg('ai', md(
+            `**${n} members** — perfect! ⏱️\n\n`
+            + `When should the group close? You can say:\n`
+            + `• *"in 7 days"*  • *"in 2 weeks"*  • *"in a month"*`
+        ));
+        return;
+    }
+
+    /* Step 2: parse deadline, then create the group */
+    if (action.step === 'ask_deadline') {
+        const lower  = text.toLowerCase();
+        let days = null;
+        const mD = lower.match(/(\d+)\s*(day|יום)/i);
+        const mW = lower.match(/(\d+)\s*(week|שבוע)/i);
+        const mM = lower.match(/(\d+)\s*(month|חודש)/i);
+        if (mD)                                 days = parseInt(mD[1]);
+        else if (mW)                            days = parseInt(mW[1]) * 7;
+        else if (mM)                            days = parseInt(mM[1]) * 30;
+        else if (/tomorrow|מחר/.test(lower))   days = 1;
+        else if (/\bweek\b|שבוע/.test(lower))  days = 7;
+        else if (/\bmonth\b|חודש/.test(lower)) days = 30;
+
+        if (!days || days < 1 || days > 180) {
+            addMsg('ai', md('Please say something like **"in 7 days"** or **"in 2 weeks"** (1–180 days).'));
+            return;
         }
 
-        // Case B: nothing anywhere in the platform
-        return {
-            text: `I searched everywhere for <strong>"${qDisp}"</strong> but couldn't find any matching groups or products in our catalog. 😕<br><br>Try a different search term or browse all available deals!`,
-            actions: [
-                {label:'🛍️ Browse all groups', href: SC_APP_URL + '/pages/browse.php'},
-            ]
-        };
+        pendingAction.step = 'creating';
+        showTyping();
+
+        const dl = new Date();
+        dl.setDate(dl.getDate() + days);
+        const deadlineStr = dl.toISOString().slice(0, 19).replace('T', ' ');
+
+        try {
+            const res  = await fetch(`${SC_APP_URL}/api/groups.php?action=create`, {
+                method:      'POST',
+                credentials: 'same-origin',
+                headers:     {'Content-Type': 'application/json'},
+                body:        JSON.stringify({
+                    product_id:          action.product_id,
+                    target_participants: action.target,
+                    deadline:            deadlineStr,
+                }),
+            });
+            const data = await res.json();
+            hideTyping();
+            if (!res.ok) throw new Error(data.error || 'Could not create group');
+
+            pendingAction = null;
+            addMsg('ai', md(
+                `🎉 **Group created!** You're the first member (${action.target - 1} more spot${action.target - 1 !== 1 ? 's' : ''} to go).\n\n`
+                + `Once ${action.target} people join, everyone pays together and unlocks the group discount!\n\n`
+                + `[**View your group →**](${SC_APP_URL}/pages/group.php?id=${data.group_id})`
+            ));
+        } catch (err) {
+            hideTyping();
+            pendingAction = null;
+            addMsg('ai', `Sorry, I couldn't create the group: ${esc(err.message)}`);
+        }
+        scrollEnd();
     }
-
-    const n   = results.length;
-    const top = results[0];
-    const has = (...ws) => ws.some(w => kws.includes(w));
-
-    /* ── Brand/category-aware intro ── */
-    let intro = '';
-    if (has('jbl','speaker','speakers','bluetooth','subwoofer'))
-        intro = `Found <strong>${n} audio deal${n>1?'s':''}</strong> for you! 🎵`;
-    else if (has('airpods','iphone','apple','ipad','macbook'))
-        intro = `Found <strong>${n} Apple group${n>1?'s':''}</strong>! 🍎`;
-    else if (has('samsung','galaxy'))
-        intro = `Here are <strong>${n} Samsung deal${n>1?'s':''}</strong>! 📱`;
-    else if (has('laptop','computer','pc','notebook'))
-        intro = `Found <strong>${n} computer deal${n>1?'s':''}</strong>! 💻`;
-    else if (has('headphone','headphones','earphone','earphones','earbuds','bose','sony'))
-        intro = `Found <strong>${n} headphone deal${n>1?'s':''}</strong>! 🎧`;
-    else if (cat === 'electronics')
-        intro = `Found <strong>${n} electronics group${n>1?'s':''}</strong> matching your search! 💡`;
-    else if (cat === 'fashion')
-        intro = `Found <strong>${n} fashion deal${n>1?'s':''}</strong>! 👗`;
-    else if (cat === 'home')
-        intro = `Found <strong>${n} home deal${n>1?'s':''}</strong>! 🏠`;
-    else if (cat === 'food')
-        intro = `Found <strong>${n} food deal${n>1?'s':''}</strong>! 🍽️`;
-    else if (cat === 'sports')
-        intro = `Found <strong>${n} sports deal${n>1?'s':''}</strong>! 🏃`;
-    else
-        intro = `I found <strong>${n} open group${n>1?'s':''}</strong> matching <strong>"${qDisp}"</strong>! 🎉`;
-
-    /* ── Best deal callout ── */
-    let detail = '';
-    if (top.discount_percent >= 30)
-        detail = ` Best deal: <strong>${top.discount_percent}% off</strong> on ${esc(top.product_name)} — saves you ₪${Math.round(top.price_ils - top.group_price_ils).toLocaleString()}!`;
-    else if (top.discount_percent >= 15)
-        detail = ` Top pick: <strong>${esc(top.product_name)}</strong> at <strong>${top.discount_percent}% off</strong>.`;
-
-    /* ── Urgency callout ── */
-    const urgent = results.filter(r => r.days_left <= 3);
-    let urgency = '';
-    if (urgent.length)
-        urgency = `<br><br>⚡ <strong>${urgent.length} group${urgent.length>1?' are':' is'} closing in under 3 days</strong> — act fast!`;
-
-    /* ── Always offer a browse link in query mode ── */
-    const actions = [
-        {label: '🔍 Browse all deals', href: SC_APP_URL + '/pages/browse.php'},
-    ];
-
-    return { text: intro + detail + urgency, actions };
 }
 
-/* ── Send a message ─────────────────────────────────────── */
-let isBusy = false;
-
+/* ── Send ────────────────────────────────────────────────── */
 async function send(text) {
     text = text.trim();
-    if (!text || isBusy) return;
+    if (!text) return;
+
+    /* Route to create-group step machine when active */
+    if (pendingAction) {
+        addMsg('user', text);
+        await delay(120);
+        await handlePendingAction(text);
+        return;
+    }
+
+    if (isBusy) return;
     isBusy = true;
 
-    /* Hide prompts after first send */
+    /* Hide quick-prompt chips after first real send */
     const prompts = document.getElementById('sc-prompts');
-    if (prompts) { prompts.style.opacity = '0'; setTimeout(() => { prompts.style.display = 'none'; }, 250); }
+    if (prompts) { prompts.style.opacity = '0'; setTimeout(() => prompts.style.display = 'none', 250); }
 
-    /* User bubble */
     addMsg('user', text);
 
-    /* Clear input */
     const inp = document.getElementById('sc-input');
     const btn = document.getElementById('sc-send');
     inp.value = '';
     inp.style.height = 'auto';
     btn.disabled = true;
 
-    /* Typing */
+    /* Track in conversation history (user turn first) */
+    chatHistory.push({role: 'user', content: text});
+    if (chatHistory.length > 20) chatHistory.shift();
+
     await delay(280);
     showTyping();
 
     try {
-        const p = new URLSearchParams({ user_id: SC_USER_ID, limit: text ? 3 : 10 });
-        if (text) p.append('query', text);
-        const res  = await fetch(`${SC_APP_URL}/api/agent.php?${p}`);
+        const res = await fetch(`${SC_APP_URL}/api/agent_chat.php`, {
+            method:      'POST',
+            credentials: 'same-origin',
+            headers:     {'Content-Type': 'application/json'},
+            body:        JSON.stringify({
+                message:  text,
+                history:  chatHistory.slice(0, -1), // history before current turn
+                user_lat: userLat,
+                user_lng: userLng,
+            }),
+        });
+
         const data = await res.json();
-
-        const meta    = Array.isArray(data) ? null  : (data.meta    || null);
-        const results = Array.isArray(data) ? data  : (data.results || []);
-
-        await delay(550);
+        await delay(350);
         hideTyping();
 
-        const reply          = buildReply(meta, results, text);
-        const cards          = renderCards(results);
-        const suggestedCards = reply.suggestedProducts
-                                 ? renderSuggestedProducts(reply.suggestedProducts)
-                                 : '';
+        if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
 
-        let html = reply.text;
-        if (cards)          html += cards;
-        if (suggestedCards) html += suggestedCards;
+        const replyText = data.message  || '';
+        const intent    = data.intent   || 'other';
+        const groups    = data.groups   || [];
+        const products  = data.products || [];
 
-        if (reply.actions && reply.actions.length) {
-            const chips = reply.actions.map(a =>
-                `<a href="${a.href}" class="sc-action">${a.label}</a>`
-            ).join('');
-            html += `<div class="sc-actions">${chips}</div>`;
+        let html = md(replyText);
+
+        if (intent !== 'off_topic') {
+            if (intent === 'create' && products.length) {
+                /* Create intent: show product cards (to start a group) */
+                html += renderProductCards(products);
+            } else if (groups.length) {
+                /* Search found open groups: show group cards with Join button */
+                html += renderGroupCards(groups);
+            } else if (products.length) {
+                /* No open groups, but products exist: offer to start a group */
+                html += renderProductCards(products);
+            }
         }
 
         addMsg('ai', html);
+
+        /* Track assistant response in history */
+        chatHistory.push({role: 'assistant', content: replyText});
+        if (chatHistory.length > 20) chatHistory.shift();
 
     } catch (e) {
         hideTyping();
@@ -796,9 +865,7 @@ async function send(text) {
     }
 }
 
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-/* ── Input bar events ───────────────────────────────────── */
+/* ── Input bar events ────────────────────────────────────── */
 const inp = document.getElementById('sc-input');
 const btn = document.getElementById('sc-send');
 
@@ -815,39 +882,42 @@ document.querySelectorAll('.sc-prompt').forEach(el => {
     el.addEventListener('click', () => send(el.dataset.prompt));
 });
 
-/* ── Welcome message on load ────────────────────────────── */
+/* ── Init ────────────────────────────────────────────────── */
 (function init() {
     const greet = SC_HAS_PREF
-        ? `Hi **${SC_NAME}**! 👋 I'm your **SmartCart AI Assistant**.\n\nI can find open group deals based on what you're looking for — or I can suggest deals based on your saved preferences.\n\nWhat are you shopping for today?`
-        : `Hi **${SC_NAME}**! 👋 I'm your **SmartCart AI Assistant**.\n\nI help you find group purchases so you can save money together. Just tell me what you're looking for — like *"JBL speaker"* or *"iPhone deals"* — and I'll search all open groups for you!\n\nTap a suggestion below or type your own request to get started.`;
+        ? `Hi **${SC_NAME}**! 👋 I'm your **SmartCart AI Assistant**.\n\nI can find open group deals or show picks based on your saved preferences.\n\nWhat are you shopping for today?`
+        : `Hi **${SC_NAME}**! 👋 I'm your **SmartCart AI Assistant**.\n\nI help you find group purchases so you can save money together. Tell me what you're looking for — like *"JBL speaker"* or *"iPhone deals"* — and I'll search all open groups!\n\nTap a suggestion below or type your own.`;
 
     addMsg('ai', md(greet));
 
-    /* Auto-load profile-based picks for users with preferences */
+    /* Auto-load profile picks (uses existing api/agent.php, profile mode) */
     if (SC_HAS_PREF) {
         delay(1300).then(async () => {
             showTyping();
             try {
-                const res  = await fetch(`${SC_APP_URL}/api/agent.php?user_id=${SC_USER_ID}&limit=10`);
-                const data = await res.json();
-                const meta    = Array.isArray(data) ? null  : (data.meta    || null);
-                const results = Array.isArray(data) ? data  : (data.results || []);
-                await delay(700);
+                const res     = await fetch(`${SC_APP_URL}/api/agent.php?user_id=${SC_USER_ID}&limit=6`);
+                const data    = await res.json();
+                const results = Array.isArray(data) ? data : (data.results || []);
+                await delay(600);
                 hideTyping();
-                const reply = buildReply(meta, results, '');
-                const cards = renderCards(results);
-                let html = reply.text + (cards || '');
-                if (reply.actions && reply.actions.length) {
-                    const chips = reply.actions.map(a =>
-                        `<a href="${a.href}" class="sc-action">${a.label}</a>`
-                    ).join('');
-                    html += `<div class="sc-actions">${chips}</div>`;
+                if (results.length) {
+                    const n = results.length;
+                    addMsg('ai',
+                        md(`Based on your preferences, here are **${n} open group${n > 1 ? 's' : ''}** you might like! 🎉`)
+                        + renderGroupCards(results)
+                    );
                 }
-                addMsg('ai', html);
-            } catch(e) {
-                hideTyping();
-            }
+            } catch(e) { hideTyping(); }
         });
+    }
+
+    /* Silently request geolocation for distance-based ranking */
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            pos => { userLat = pos.coords.latitude; userLng = pos.coords.longitude; },
+            () => {},
+            {timeout: 5000}
+        );
     }
 })();
 </script>
